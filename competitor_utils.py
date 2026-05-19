@@ -205,18 +205,22 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
 
         client = genai.Client(api_key=gemini_api_key)
 
-        # Try models in order of preference
-        for model_name in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
+        # Use same model as summary_utils.py (known working)
+        last_error = None
+        response = None
+        for model_name in ["gemini-2.0-flash", "gemini-3-flash-preview", "gemini-1.5-flash", "gemini-pro"]:
             try:
                 response = client.models.generate_content(
                     model=model_name,
                     contents=prompt
                 )
                 break
-            except Exception:
+            except Exception as me:
+                last_error = me
                 continue
-        else:
-            return []
+
+        if response is None:
+            raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
 
         text = response.text.strip()
         # Strip markdown code fences if present

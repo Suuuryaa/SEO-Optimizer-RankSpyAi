@@ -775,7 +775,7 @@ if competitors_clicked:
                     gemini_competitors = []
 
             if not gemini_competitors:
-                st.warning("⚠️ Gemini returned no competitors. Check your API key or try a different URL.")
+                st.error("⚠️ Gemini returned an empty competitor list. The model may have returned non-JSON output.")
                 st.stop()
 
             st.success(f"✅ AI identified {len(gemini_competitors)} competitors ({country})")
