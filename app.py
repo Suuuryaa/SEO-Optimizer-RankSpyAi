@@ -1083,40 +1083,62 @@ if competitors_clicked:
             # ── Step 4: Display score comparison ────────────────────────────
             benchmark_df = pd.DataFrame(benchmark_rows)
 
-            # Score bar chart — primary highlighted
-            fig = px.bar(
-                benchmark_df,
-                x="Venue Name",
-                y="SEO Score",
-                color="Role",
-                text="SEO Score",
-                color_discrete_map={"🏠 Primary Venue": "#667eea", "🎯 Competitor": "#FF7043"},
-                title=f"SEO Score vs Competitors — keyword: '{keyword}'"
-            )
-            fig.update_traces(textposition="outside")
-            fig.update_layout(xaxis_tickangle=-30, height=420, showlegend=True)
-            st.plotly_chart(fig, use_container_width=True)
+            # Separate errors from valid results
+            error_rows = [r for r in benchmark_rows if r.get("Score Band") == "Error"]
+            valid_rows = [r for r in benchmark_rows if r.get("Score Band") != "Error"]
+
+            if error_rows:
+                blocked = [r["Venue Name"] if r["Venue Name"] != "Error" else r["URL"] for r in error_rows]
+                st.warning(f"⚠️ {len(error_rows)} site(s) blocked automated access (common for large corporate sites): {', '.join(blocked)}")
+
+            primary_row = next((r for r in valid_rows if "Primary" in r.get("Role", "")), None)
+
+            if not primary_row:
+                st.error(f"❌ Could not fetch **{url}** — the site blocks automated requests. Try a different URL that doesn't block bots.")
+                # Still show competitors if we have them
+                valid_comp_rows = [r for r in valid_rows if "Competitor" in r.get("Role", "")]
+                if valid_comp_rows:
+                    st.markdown("### 📊 Competitor Scores (primary site unavailable)")
+
+            # Score bar chart — only valid rows
+            if valid_rows:
+                valid_df = pd.DataFrame(valid_rows)
+                fig = px.bar(
+                    valid_df,
+                    x="Venue Name",
+                    y="SEO Score",
+                    color="Role",
+                    text="SEO Score",
+                    color_discrete_map={"🏠 Primary Venue": "#667eea", "🎯 Competitor": "#FF7043"},
+                    title=f"SEO Score vs Competitors — keyword: '{keyword}'"
+                )
+                fig.update_traces(textposition="outside")
+                fig.update_layout(xaxis_tickangle=-30, height=420, showlegend=True,
+                                  paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                  font=dict(color="white"))
+                st.plotly_chart(fig, use_container_width=True)
 
             # Summary metrics
-            primary_row = next((r for r in benchmark_rows if "Primary" in r.get("Role", "")), None)
             if primary_row:
                 best_comp = max(
-                    [r for r in benchmark_rows if "Competitor" in r.get("Role", "")],
+                    [r for r in valid_rows if "Competitor" in r.get("Role", "")],
                     key=lambda x: x.get("SEO Score", 0),
                     default={}
                 )
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("Your SEO Score", primary_row.get("SEO Score", 0))
-                m2.metric("Best Competitor Score", best_comp.get("SEO Score", "N/A"))
-                gap = primary_row.get("SEO Score", 0) - best_comp.get("SEO Score", 0)
-                m3.metric("Gap vs Best", f"{gap:+d}", delta_color="normal")
-                m4.metric("Competitors Analysed", len(gemini_competitors))
+                m2.metric("Best Competitor Score", best_comp.get("SEO Score", "N/A") if best_comp else "N/A")
+                if best_comp:
+                    gap = primary_row.get("SEO Score", 0) - best_comp.get("SEO Score", 0)
+                    m3.metric("Gap vs Best", f"{gap:+d}", delta_color="normal")
+                m4.metric("Competitors Analysed", len([r for r in valid_rows if "Competitor" in r.get("Role","")]))
 
-            # Full data table
+            # Full data table — all rows including errors
             st.markdown("### 📋 Full Comparison Table")
             display_cols = ["Role", "Venue Name", "URL", "SEO Score", "Score Band",
                            "Keyword Count", "Word Count", "HTTPS", "Schema"]
-            st.dataframe(benchmark_df[display_cols], use_container_width=True)
+            available_cols = [c for c in display_cols if c in benchmark_df.columns]
+            st.dataframe(benchmark_df[available_cols], use_container_width=True)
 
             # ── Step 5: AI Executive Summary ────────────────────────────────
             if primary_row and gemini_api_key:
