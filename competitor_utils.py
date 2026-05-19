@@ -1,22 +1,25 @@
 from urllib.parse import urlparse
 
 
-def classify_competitor(url, title=""):
+def _get_domain(url):
+    try:
+        return urlparse(url).netloc.replace("www.", "").lower()
+    except Exception:
+        return ""
+
+
+def classify_competitor(url, title="", primary_domain=""):
     """
-    Enhanced competitor classification that filters out:
-    - Wikipedia and encyclopedias
-    - Forums (Reddit, Quora, etc.)
-    - Social media
-    - News/blog articles
-    - Directories
-    - YouTube/videos
+    Classify a SERP result. Returns one of:
+      Primary Venue, Social, Encyclopedia, Forum, Directory,
+      Institutional, Marketplace, Content, Direct Competitor
     """
     url_lower = url.lower()
     title_lower = title.lower() if title else ""
 
-    # Primary venue (Funlab properties)
-    if "holeymoley" in url_lower or "archiebrothers" in url_lower or "funlab" in url_lower:
-        return "Funlab"
+    # Primary venue — matched dynamically against the user's URL
+    if primary_domain and _get_domain(url) == primary_domain:
+        return "Primary Venue"
 
     # ========== NON-BUSINESS FILTERS (Strict) ==========
     
@@ -78,13 +81,12 @@ def get_domain(url):
         return ""
 
 
-def build_full_serp_table(results):
+def build_full_serp_table(results, primary_url=""):
     """Build table with all SERP results"""
+    primary_domain = _get_domain(primary_url) if primary_url else ""
     rows = []
-
     for i, item in enumerate(results, start=1):
-        comp_type = classify_competitor(item["link"], item.get("title", ""))
-
+        comp_type = classify_competitor(item["link"], item.get("title", ""), primary_domain)
         rows.append({
             "SERP Rank": i,
             "Title": item.get("title", ""),
@@ -92,20 +94,17 @@ def build_full_serp_table(results):
             "Type": comp_type,
             "Snippet": item.get("snippet", "")
         })
-
     return rows
 
 
-def filter_direct_competitors(results):
+def filter_direct_competitors(results, primary_url=""):
     """Filter to show only direct competitors (real businesses)"""
+    primary_domain = _get_domain(primary_url) if primary_url else ""
     filtered = []
     direct_rank = 1
-
     for i, item in enumerate(results, start=1):
-        comp_type = classify_competitor(item["link"], item.get("title", ""))
-
-        # Only include actual competitors (not Wikipedia, forums, etc.)
-        if comp_type in ["Direct Competitor", "Funlab"]:
+        comp_type = classify_competitor(item["link"], item.get("title", ""), primary_domain)
+        if comp_type in ["Direct Competitor", "Primary Venue"]:
             filtered.append({
                 "Direct Rank": direct_rank,
                 "SERP Rank": i,
@@ -116,18 +115,15 @@ def filter_direct_competitors(results):
                 "Domain": get_domain(item.get("link", ""))
             })
             direct_rank += 1
-
     return filtered
 
 
-def get_top_n_external_direct_competitors(results, n=3):
-    """Get top N external direct competitors (excluding primary venue)"""
+def get_top_n_external_direct_competitors(results, n=3, primary_url=""):
+    """Get top N direct competitors, excluding the primary venue's own domain"""
+    primary_domain = _get_domain(primary_url) if primary_url else ""
     external = []
-
     for i, item in enumerate(results, start=1):
-        comp_type = classify_competitor(item["link"], item.get("title", ""))
-
-        # Only real competitors, not Funlab properties
+        comp_type = classify_competitor(item["link"], item.get("title", ""), primary_domain)
         if comp_type == "Direct Competitor":
             external.append({
                 "SERP Rank": i,
@@ -137,15 +133,15 @@ def get_top_n_external_direct_competitors(results, n=3):
                 "Snippet": item.get("snippet", ""),
                 "Domain": get_domain(item.get("link", ""))
             })
-
     return external[:n]
 
 
-def get_primary_result(results):
-    """Find the primary venue (Funlab) in results"""
+def get_primary_result(results, primary_url=""):
+    """Find the primary venue in SERP results by matching domain"""
+    primary_domain = _get_domain(primary_url) if primary_url else ""
     for i, item in enumerate(results, start=1):
-        comp_type = classify_competitor(item["link"], item.get("title", ""))
-        if comp_type == "Funlab":
+        comp_type = classify_competitor(item["link"], item.get("title", ""), primary_domain)
+        if comp_type == "Primary Venue":
             return {
                 "SERP Rank": i,
                 "Title": item.get("title", ""),
@@ -154,5 +150,4 @@ def get_primary_result(results):
                 "Snippet": item.get("snippet", ""),
                 "Domain": get_domain(item.get("link", ""))
             }
-
     return None

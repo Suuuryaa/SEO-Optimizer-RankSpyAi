@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 import re
 import logging
+import time
 from tenacity import retry, stop_after_attempt, wait_exponential
 import json
 
@@ -30,15 +31,28 @@ def get_page_soup(url):
         requests.RequestException: If fetch fails after retries
     """
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
     }
-    
+
     try:
         logger.info(f"Fetching URL: {url}")
-        response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
         response.raise_for_status()
         logger.info(f"Successfully fetched {url}")
         return BeautifulSoup(response.text, "lxml"), response.text
+    except requests.exceptions.Timeout:
+        raise requests.exceptions.Timeout(
+            f"Timed out fetching {url}. Large corporate sites (DHL, FedEx, etc.) often block automated requests. Try a smaller/independent site URL."
+        )
+    except requests.exceptions.HTTPError as e:
+        raise requests.exceptions.HTTPError(
+            f"HTTP {e.response.status_code} from {url}. The site may be blocking bots or require login."
+        )
     except requests.RequestException as e:
         logger.error(f"Failed to fetch {url}: {e}")
         raise

@@ -798,25 +798,25 @@ if competitors_clicked:
                 
                 with comp_tab1:
                     st.markdown("### Full Google SERP Results")
-                    full_serp_rows = build_full_serp_table(competitors)
+                    full_serp_rows = build_full_serp_table(competitors, primary_url=url)
                     full_serp_df = pd.DataFrame(full_serp_rows)
                     st.dataframe(full_serp_df, use_container_width=True)
-                
+
                 with comp_tab2:
                     st.markdown("### Direct Competitors Only")
-                    direct_competitors = filter_direct_competitors(competitors)
-                    
+                    direct_competitors = filter_direct_competitors(competitors, primary_url=url)
+
                     if direct_competitors:
                         direct_df = pd.DataFrame(direct_competitors)
                         st.dataframe(direct_df, use_container_width=True)
                     else:
                         st.info("No direct competitors detected.")
-                
+
                 with comp_tab3:
                     st.markdown("### Primary Venue + Top 3 Direct Competitors")
-                    
-                    primary_result = get_primary_result(competitors)
-                    top3_external = get_top_n_external_direct_competitors(competitors, n=3)
+
+                    primary_result = get_primary_result(competitors, primary_url=url)
+                    top3_external = get_top_n_external_direct_competitors(competitors, n=3, primary_url=url)
                     
                     benchmark_rows = []
                     

@@ -68,71 +68,99 @@ def get_serp_results(keyword, api_key, location_params=None, max_retries=3):
     raise Exception("Failed to fetch SERP results after all retries")
 
 
+def _extract_domain(url):
+    """Extract bare domain from URL for use in search queries."""
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+        netloc = parsed.netloc or parsed.path
+        return netloc.replace("www.", "").split("/")[0]
+    except Exception:
+        return ""
+
+
 def progressive_competitor_search(url, keyword, api_key, filter_func, min_competitors=5):
     """
-    Progressive geographic search expansion.
-    
-    Starts with city-specific search, expands to country-wide, then global
-    until minimum number of direct competitors found.
-    
-    Args:
-        url: Primary venue URL (for location detection)
-        keyword: Search keyword
-        api_key: SERPER API key
-        filter_func: Function to filter direct competitors from results
-        min_competitors: Minimum competitors needed (default: 5)
-        
+    Find real business competitors for the given URL/keyword.
+
+    Strategy:
+      1. related:{domain} — Google's own "find similar sites" signal
+      2. keyword + domain name hint — contextual keyword search
+      3. Raw keyword global fallback
+
     Returns:
-        Tuple of (all_results, direct_competitors, search_level_message)
+        Tuple of (all_results, direct_competitors, search_log, location_msg)
     """
     from location_utils import get_location_from_url
-    
+
+    domain = _extract_domain(url) if url else ""
+    # domain name without TLD for readability (e.g. "parrotanalytics", "oneplus")
+    domain_hint = domain.split(".")[0] if domain else ""
+
     location = get_location_from_url(url) if url else None
-    
-    # Track search progression
     search_log = []
     all_results = []
     direct_competitors = []
-    
-    # LEVEL 1: City-specific search
-    if location and location['city']:
-        search_query = f"{keyword} {location['city']} {location['country_name']}"
+
+    # LEVEL 1: related:{domain} — finds genuinely similar websites
+    if domain:
+        search_query = f"related:{domain}"
         search_log.append(f"🔍 Searching: {search_query}")
-        
-        location_params = {
-            'gl': location['serper_gl'],
-            'location': location['serper_location']
-        }
-        
-        all_results = get_serp_results(search_query, api_key, location_params)
-        direct_competitors = filter_func(all_results)
-        
+        all_results = get_serp_results(search_query, api_key)
+        direct_competitors = filter_func(all_results, primary_url=url)
+
         if len(direct_competitors) >= min_competitors:
-            return all_results, direct_competitors, search_log, f"🌍 {location['city']}, {location['country_name']}"
-        
-        search_log.append(f"⚠️ Only {len(direct_competitors)} direct competitors found in {location['city']}")
-    
-    # LEVEL 2: Country-wide search
-    if location:
+            return all_results, direct_competitors, search_log, f"🌐 Sites similar to {domain}"
+
+        search_log.append(f"⚠️ Only {len(direct_competitors)} found via related search, expanding...")
+
+    # LEVEL 2: keyword + domain hint (e.g. "data leader parrotanalytics alternatives")
+    if domain_hint:
+        search_query = f"{keyword} {domain_hint} alternatives competitors"
+        search_log.append(f"🔄 Searching: {search_query}")
+
+        location_params = {}
+        if location:
+            location_params = {'gl': location['serper_gl']}
+
+        results2 = get_serp_results(search_query, api_key, location_params or None)
+        # Merge, deduplicate by link
+        seen = {r["link"] for r in all_results}
+        for r in results2:
+            if r["link"] not in seen:
+                all_results.append(r)
+                seen.add(r["link"])
+
+        direct_competitors = filter_func(all_results, primary_url=url)
+
+        if len(direct_competitors) >= min_competitors:
+            return all_results, direct_competitors, search_log, f"🌐 Competitors of {domain}"
+
+        search_log.append(f"⚠️ Still only {len(direct_competitors)} found, trying keyword search...")
+
+    # LEVEL 3: Geo-aware keyword search
+    if location and location.get('country_name'):
         search_query = f"{keyword} {location['country_name']}"
         search_log.append(f"🔄 Expanding to: {location['country_name']}")
-        
-        location_params = {
-            'gl': location['serper_gl']
-        }
-        
-        all_results = get_serp_results(search_query, api_key, location_params)
-        direct_competitors = filter_func(all_results)
-        
+        location_params = {'gl': location['serper_gl']}
+        results3 = get_serp_results(search_query, api_key, location_params)
+        seen = {r["link"] for r in all_results}
+        for r in results3:
+            if r["link"] not in seen:
+                all_results.append(r)
+                seen.add(r["link"])
+        direct_competitors = filter_func(all_results, primary_url=url)
         if len(direct_competitors) >= min_competitors:
             return all_results, direct_competitors, search_log, f"🌍 {location['country_name']} (country-wide)"
-        
-        search_log.append(f"⚠️ Only {len(direct_competitors)} direct competitors found in {location['country_name']}")
-    
-    # LEVEL 3: Global search
-    search_log.append(f"🔄 Expanding globally: {keyword}")
-    
-    all_results = get_serp_results(keyword, api_key)
-    direct_competitors = filter_func(all_results)
-    
-    return all_results, direct_competitors, search_log, f"🌍 Global results"
+
+    # LEVEL 4: Raw global keyword fallback
+    search_log.append(f"🔄 Global keyword search: {keyword}")
+    results4 = get_serp_results(keyword, api_key)
+    seen = {r["link"] for r in all_results}
+    for r in results4:
+        if r["link"] not in seen:
+            all_results.append(r)
+            seen.add(r["link"])
+
+    direct_competitors = filter_func(all_results, primary_url=url)
+    return all_results, direct_competitors, search_log, "🌍 Global results"
