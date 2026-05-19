@@ -52,6 +52,8 @@ def classify_competitor(url, title="", primary_domain=""):
         "capterra.com", "getapp.com", "softwareadvice.com",
         "bloomberg.com", "reuters.com", "businesswire.com", "prnewswire.com",
         "globenewswire.com", "accesswire.com",
+        "cbinsights.com", "marketing91.com", "growjo.com", "macrotrends.net",
+        "comparably.com", "stockanalysis.com", "wisesheets.io",
     ]):
         return "Directory"
 
@@ -182,7 +184,7 @@ def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None):
 
         country_hint = ""
         if location and location.get("country_name"):
-            country_hint = f"The business operates in {location['country_name']}. Prioritise competitors active in that market."
+            country_hint = f"The business operates in {location['country_name']}. Prioritise competitors active in that market with local domains where possible."
 
         domain = _get_domain(url)
 
@@ -193,9 +195,9 @@ Target keyword context: "{keyword}"
 {country_hint}
 
 Identify 6-8 DIRECT competitor businesses — companies that sell similar products/services and compete for the same customers.
-Do NOT include: directories, review sites, news sites, social media, or the business itself.
+Do NOT include: directories, review sites, news sites, social media, analyst platforms (CBInsights, Crunchbase, G2), or the business itself.
 
-Return ONLY a valid JSON array (no markdown, no explanation):
+Return ONLY a valid JSON array with no markdown fences or explanation:
 [
   {{"name": "Brand Name", "domain": "example.com", "website": "https://example.com"}},
   ...
@@ -209,7 +211,7 @@ Return ONLY a valid JSON array (no markdown, no explanation):
 
         text = response.text.strip()
         # Strip markdown code fences if present
-        if text.startswith("```"):
+        if "```" in text:
             text = text.split("```")[1]
             if text.startswith("json"):
                 text = text[4:]
@@ -218,5 +220,5 @@ Return ONLY a valid JSON array (no markdown, no explanation):
         competitors = json.loads(text)
         return competitors if isinstance(competitors, list) else []
 
-    except Exception as e:
+    except Exception:
         return []
