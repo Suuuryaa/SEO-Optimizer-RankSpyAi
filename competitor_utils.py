@@ -39,21 +39,34 @@ def classify_competitor(url, title="", primary_domain=""):
     if any(x in url_lower for x in ["youtube.com", "youtu.be", "vimeo.com", "dailymotion.com"]):
         return "Social"
     
-    # Review/directory sites (not actual competitors)
-    if any(x in url_lower for x in ["tripadvisor", "yelp", "zomato", "foursquare", "trustpilot", 
-                                     "google.com/maps", "newzealand.com", "aucklandnz.com", 
-                                     "booking.com", "expedia"]):
+    # Business profile / directory / data aggregator sites
+    if any(x in url_lower for x in [
+        "tripadvisor", "yelp", "zomato", "foursquare", "trustpilot",
+        "google.com/maps", "newzealand.com", "aucklandnz.com",
+        "booking.com", "expedia",
+        # B2B / company profile directories
+        "zoominfo.com", "crunchbase.com", "pitchbook.com", "owler.com",
+        "dnb.com", "craft.co", "similarweb.com", "semrush.com",
+        "glassdoor.com", "indeed.com", "clutch.co", "g2.com",
+        "capterra.com", "getapp.com", "softwareadvice.com",
+        "bloomberg.com", "reuters.com", "businesswire.com", "prnewswire.com",
+        "globenewswire.com", "accesswire.com",
+    ]):
         return "Directory"
-    
+
     # News and blog platforms
-    if any(x in url_lower for x in ["medium.com", "wordpress.com", "blogger.com", "tumblr.com",
-                                     "/blog/", "/news/", "/article/", "nzherald", "stuff.co.nz"]):
+    if any(x in url_lower for x in [
+        "medium.com", "wordpress.com", "blogger.com", "tumblr.com",
+        "/blog/", "/news/", "/article/", "/press-release/", "/partner",
+        "nzherald", "stuff.co.nz", "techcrunch.com", "forbes.com",
+        "businessinsider.com", "wsj.com", "ft.com", "economist.com",
+    ]):
         return "Content"
-    
-    # E-commerce platforms (unless they ARE the business)
+
+    # E-commerce platforms
     if any(x in url_lower for x in ["amazon.", "ebay.", "trademe.co.nz", "etsy."]):
         return "Marketplace"
-    
+
     # Government and education sites
     if any(x in url_lower for x in [".gov", ".edu", ".ac.nz"]):
         return "Institutional"
@@ -66,8 +79,13 @@ def classify_competitor(url, title="", primary_domain=""):
     # - Business-related keywords in title
     # - Not generic listing pages
     
-    # Filter out generic "best of" or "top 10" listicles
-    if any(x in title_lower for x in ["top 10", "best", "guide to", "how to find", "vs", "comparison"]):
+    # Filter out listicles, press releases, partnership announcements
+    if any(x in title_lower for x in [
+        "top 10", "best ", "guide to", "how to find", "vs ", "comparison",
+        "partners with", "fund partners", "raises ", "acquires ", "launches ",
+        "overview, news", "company profile", "valuation, funding",
+        "jobs (now hiring)", "jobs near you",
+    ]):
         return "Content"
     
     # At this point, it's likely a direct competitor
