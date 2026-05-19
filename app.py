@@ -1023,11 +1023,14 @@ if competitors_clicked:
                 try:
                     gemini_competitors = get_competitors_via_gemini(url, keyword, gemini_api_key, location)
                 except Exception as e:
-                    st.error(f"❌ Gemini failed: {e}")
+                    err_str = str(e)
+                    if "429" in err_str or "spending cap" in err_str or "quota" in err_str.lower():
+                        st.error("💳 Gemini API spending cap reached. Go to [aistudio.google.com/spend](https://aistudio.google.com/spend) to increase your limit.")
+                    else:
+                        st.error(f"❌ Gemini failed: {e}")
                     gemini_competitors = []
 
             if not gemini_competitors:
-                st.error("⚠️ Gemini returned an empty competitor list. The model may have returned non-JSON output.")
                 st.stop()
 
             st.success(f"✅ AI identified {len(gemini_competitors)} competitors ({country})")
