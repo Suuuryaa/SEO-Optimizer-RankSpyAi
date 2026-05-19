@@ -101,11 +101,15 @@ def progressive_competitor_search(url, keyword, api_key, filter_func, min_compet
     all_results = []
     direct_competitors = []
 
-    # LEVEL 0: Gemini AI — asks LLM to identify real competitors by name/domain
+    # LEVEL 0: Gemini AI — asks LLM to identify real local competitors by name/domain
     if gemini_api_key:
         from competitor_utils import get_competitors_via_gemini
-        search_log.append(f"🤖 Using AI to identify competitors for {domain}...")
-        gemini_competitors = get_competitors_via_gemini(url, keyword, gemini_api_key, location)
+        search_log.append(f"🤖 Asking AI: who are local competitors of {domain} for '{keyword}'?")
+        try:
+            gemini_competitors = get_competitors_via_gemini(url, keyword, gemini_api_key, location)
+        except Exception as e:
+            search_log.append(f"⚠️ AI lookup failed ({e}), falling back to search...")
+            gemini_competitors = []
 
         if gemini_competitors:
             # Build synthetic SERP-style entries directly from Gemini — no extra API calls
@@ -117,7 +121,7 @@ def progressive_competitor_search(url, keyword, api_key, filter_func, min_compet
                 all_results.append({
                     "title": comp_name,
                     "link": comp.get("website", f"https://{comp_domain}"),
-                    "snippet": f"Direct competitor identified by AI analysis.",
+                    "snippet": f"Direct competitor identified by AI for '{keyword}'.",
                 })
 
             direct_competitors = filter_func(all_results, primary_url=url)

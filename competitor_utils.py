@@ -204,15 +204,25 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
 ]"""
 
         client = genai.Client(api_key=gemini_api_key)
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt
-        )
+
+        # Try models in order of preference
+        for model_name in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt
+                )
+                break
+            except Exception:
+                continue
+        else:
+            return []
 
         text = response.text.strip()
         # Strip markdown code fences if present
         if "```" in text:
-            text = text.split("```")[1]
+            parts = text.split("```")
+            text = parts[1] if len(parts) > 1 else parts[0]
             if text.startswith("json"):
                 text = text[4:]
         text = text.strip()
@@ -220,5 +230,6 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
         competitors = json.loads(text)
         return competitors if isinstance(competitors, list) else []
 
-    except Exception:
-        return []
+    except Exception as e:
+        # Return error info so caller can surface it
+        raise RuntimeError(f"Gemini competitor lookup failed: {e}")
