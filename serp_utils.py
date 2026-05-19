@@ -79,7 +79,7 @@ def _extract_domain(url):
         return ""
 
 
-def progressive_competitor_search(url, keyword, api_key, filter_func, min_competitors=5):
+def progressive_competitor_search(url, keyword, api_key, filter_func, min_competitors=5, gemini_api_key=None):
     """
     Find real business competitors for the given URL/keyword.
 
@@ -94,13 +94,50 @@ def progressive_competitor_search(url, keyword, api_key, filter_func, min_compet
     from location_utils import get_location_from_url
 
     domain = _extract_domain(url) if url else ""
-    # domain name without TLD for readability (e.g. "parrotanalytics", "oneplus")
     domain_hint = domain.split(".")[0] if domain else ""
 
     location = get_location_from_url(url) if url else None
     search_log = []
     all_results = []
     direct_competitors = []
+
+    # LEVEL 0: Gemini AI — asks LLM to identify real competitors by name/domain
+    if gemini_api_key:
+        from competitor_utils import get_competitors_via_gemini
+        search_log.append(f"🤖 Using AI to identify competitors for {domain}...")
+        gemini_competitors = get_competitors_via_gemini(url, keyword, gemini_api_key, location)
+
+        if gemini_competitors:
+            # Search SERP for each competitor domain to get live data
+            for comp in gemini_competitors:
+                comp_domain = comp.get("domain", "")
+                comp_name = comp.get("name", "")
+                if not comp_domain:
+                    continue
+                try:
+                    results = get_serp_results(f"site:{comp_domain}", api_key)
+                    if results:
+                        # Take the top result for this domain
+                        all_results.append(results[0])
+                    else:
+                        # No SERP data — build a synthetic entry from Gemini data
+                        all_results.append({
+                            "title": comp_name,
+                            "link": comp.get("website", f"https://{comp_domain}"),
+                            "snippet": f"Competitor identified by AI: {comp_name}",
+                        })
+                except Exception:
+                    all_results.append({
+                        "title": comp_name,
+                        "link": comp.get("website", f"https://{comp_domain}"),
+                        "snippet": f"Competitor identified by AI: {comp_name}",
+                    })
+
+            direct_competitors = filter_func(all_results, primary_url=url)
+            if len(direct_competitors) >= min_competitors:
+                return all_results, direct_competitors, search_log, f"🤖 AI-identified competitors for {domain}"
+
+            search_log.append(f"⚠️ AI found {len(direct_competitors)} competitors, supplementing with search...")
 
     # LEVEL 1: related:{domain} — finds genuinely similar websites
     if domain:

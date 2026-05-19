@@ -771,7 +771,8 @@ if competitors_clicked:
                     keyword=keyword,
                     api_key=serp_key,
                     filter_func=filter_direct_competitors,
-                    min_competitors=5
+                    min_competitors=5,
+                    gemini_api_key=gemini_api_key
                 )
                 
                 # Show search progression

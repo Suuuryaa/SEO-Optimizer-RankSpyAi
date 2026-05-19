@@ -1,4 +1,5 @@
 from urllib.parse import urlparse
+import json
 
 
 def _get_domain(url):
@@ -169,3 +170,53 @@ def get_primary_result(results, primary_url=""):
                 "Domain": get_domain(item.get("link", ""))
             }
     return None
+
+
+def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None):
+    """
+    Use Gemini to identify real competitor brands/domains for a given URL.
+    Returns a list of dicts: [{"name": "...", "domain": "...", "website": "..."}]
+    """
+    try:
+        from google import genai
+
+        country_hint = ""
+        if location and location.get("country_name"):
+            country_hint = f"The business operates in {location['country_name']}. Prioritise competitors active in that market."
+
+        domain = _get_domain(url)
+
+        prompt = f"""You are a competitive intelligence analyst.
+
+Given this business website: {url} (domain: {domain})
+Target keyword context: "{keyword}"
+{country_hint}
+
+Identify 6-8 DIRECT competitor businesses — companies that sell similar products/services and compete for the same customers.
+Do NOT include: directories, review sites, news sites, social media, or the business itself.
+
+Return ONLY a valid JSON array (no markdown, no explanation):
+[
+  {{"name": "Brand Name", "domain": "example.com", "website": "https://example.com"}},
+  ...
+]"""
+
+        client = genai.Client(api_key=gemini_api_key)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+
+        text = response.text.strip()
+        # Strip markdown code fences if present
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        text = text.strip()
+
+        competitors = json.loads(text)
+        return competitors if isinstance(competitors, list) else []
+
+    except Exception as e:
+        return []
