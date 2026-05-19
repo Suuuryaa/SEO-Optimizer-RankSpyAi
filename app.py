@@ -24,6 +24,7 @@ from benchmark_utils import build_benchmark_summary
 from insight_utils import generate_strategic_insights
 from keyword_opportunity_utils import find_keyword_opportunities
 from location_utils import get_location_from_url, format_location_display
+from geo_utils import check_ai_crawlers, score_citability, check_llmstxt, check_eeat, calculate_geo_score
 
 
 # ==================== API KEY CONFIGURATION ====================
@@ -493,7 +494,7 @@ if analyze_clicked:
             st.markdown("---")
 
             # Tabs for organized display
-            tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "🔧 Technical SEO", "📝 Content Analysis", "🎯 Recommendations"])
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Overview", "🔧 Technical SEO", "📝 Content Analysis", "🎯 Recommendations", "🤖 GEO Score"])
 
             with tab1:
                 # Score Gauge + Key Metrics
@@ -610,6 +611,101 @@ if analyze_clicked:
                     with st.expander(f"✅ Status: Excellent", expanded=False):
                         for rec in excellent:
                             st.success(f"**{rec['Issue']}**\n\n{rec['Recommended Fix']}")
+
+            with tab5:
+                st.markdown("### 🤖 GEO Score — AI Search Visibility")
+                st.caption("How well this page is optimized for ChatGPT, Claude, Perplexity, and Google AI Overviews")
+
+                with st.spinner("Running GEO analysis..."):
+                    geo_crawlers   = check_ai_crawlers(url)
+                    geo_citability = score_citability(soup)
+                    geo_llmstxt    = check_llmstxt(url)
+                    geo_eeat       = check_eeat(soup, url)
+                    geo_result     = calculate_geo_score(
+                        crawler_score    = geo_crawlers["score"],
+                        citability_score = geo_citability["score"],
+                        eeat_score       = geo_eeat["score"],
+                        llmstxt_exists   = geo_llmstxt["exists"],
+                        has_schema       = has_schema
+                    )
+
+                # ── GEO Score gauge ──────────────────────────────────────
+                geo_col1, geo_col2 = st.columns([2, 3])
+                with geo_col1:
+                    st.plotly_chart(
+                        create_score_gauge(geo_result["score"], title="GEO Score"),
+                        use_container_width=True
+                    )
+                    st.markdown(f"**Band:** {geo_result['band']}")
+
+                with geo_col2:
+                    st.markdown("#### 📊 Score Breakdown")
+                    breakdown = geo_result["breakdown"]
+                    for key, data in breakdown.items():
+                        label = {"citability": "Content Citability", "eeat": "E-E-A-T",
+                                 "crawlers": "AI Crawler Access", "schema": "Schema Markup",
+                                 "llmstxt": "llms.txt"}.get(key, key)
+                        bar_pct = int(data["score"])
+                        st.markdown(f"**{label}** — {bar_pct}/100")
+                        st.progress(bar_pct / 100)
+
+                st.markdown("---")
+
+                # ── AI Crawler Access ────────────────────────────────────
+                geo_c1, geo_c2 = st.columns(2)
+
+                with geo_c1:
+                    st.markdown("#### 🤖 AI Crawler Access")
+                    st.caption(f"robots.txt score: **{geo_crawlers['score']}/100**")
+                    for crawler in geo_crawlers["crawlers"]:
+                        icon = "✅" if crawler["status"] == "allowed" else ("❌" if crawler["status"] == "blocked" else "⚠️")
+                        badge = "🔴" if crawler["priority"] == "critical" else "🟡"
+                        st.markdown(f"{icon} {badge} **{crawler['name']}** — {crawler['status']}")
+                    sitemap_icon = "✅" if geo_crawlers["has_sitemap"] else "❌"
+                    st.markdown(f"{sitemap_icon} Sitemap in robots.txt")
+
+                with geo_c2:
+                    st.markdown("#### 📄 llms.txt & E-E-A-T")
+
+                    # llms.txt
+                    if geo_llmstxt["exists"]:
+                        st.success(f"✅ llms.txt found — {geo_llmstxt['sections']} sections, {geo_llmstxt['links']} links")
+                    else:
+                        st.warning("❌ No llms.txt found — consider adding one to guide AI crawlers")
+                        st.markdown("[What is llms.txt?](https://llmstxt.org)")
+
+                    st.markdown("**E-E-A-T Signals**")
+                    signals = geo_eeat["signals"]
+                    eeat_items = [
+                        ("Author byline",    signals.get("has_author", False)),
+                        ("Publication date", signals.get("has_date", False)),
+                        ("About page",       signals.get("has_about", False)),
+                        ("Contact page",     signals.get("has_contact", False)),
+                        ("Privacy policy",   signals.get("has_privacy", False)),
+                        ("HTTPS",            signals.get("has_https", False)),
+                    ]
+                    for label, passed in eeat_items:
+                        st.markdown(status_indicator(passed, label), unsafe_allow_html=True)
+
+                st.markdown("---")
+
+                # ── Citability ───────────────────────────────────────────
+                st.markdown("#### ✍️ Content Citability")
+                st.caption("How likely AI models are to directly quote/cite content from this page")
+                cit_col1, cit_col2, cit_col3 = st.columns(3)
+                with cit_col1:
+                    st.metric("Citability Score", f"{geo_citability['score']}/100")
+                with cit_col2:
+                    st.metric("Grade", f"{geo_citability['grade']} — {geo_citability['grade_label']}")
+                with cit_col3:
+                    st.metric("Optimal Blocks", f"{geo_citability['optimal_blocks']} / {geo_citability['blocks_analyzed']}")
+
+                if geo_citability.get("top_blocks"):
+                    with st.expander("📋 Top Citable Content Blocks", expanded=False):
+                        for block in geo_citability["top_blocks"][:3]:
+                            st.markdown(f"**{block.get('heading', 'No heading')}** — Score: {block['score']}/100 ({block['grade']}) | {block['word_count']} words")
+                            st.caption(block.get("preview", ""))
+                            st.markdown("---")
 
             # PageSpeed Section (if available)
             if pagespeed_data:
