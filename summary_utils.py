@@ -88,13 +88,33 @@ Write:
     try:
         payload = {"contents": [{"parts": [{"text": prompt}]}],
                    "generationConfig": {"temperature": 0.4, "maxOutputTokens": 1024}}
-        for model in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+
+        # Discover available models
+        models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]
+        for api_ver in ["v1beta", "v1"]:
+            try:
+                r = _req.get(f"https://generativelanguage.googleapis.com/{api_ver}/models?key={gemini_api_key}", timeout=10)
+                if r.status_code == 200:
+                    discovered = [
+                        m["name"].replace("models/", "")
+                        for m in r.json().get("models", [])
+                        if "generateContent" in m.get("supportedGenerationMethods", [])
+                        and "gemini" in m.get("name", "").lower()
+                    ]
+                    if discovered:
+                        models_to_try = sorted(discovered, key=lambda x: (0 if "flash" in x else 1))
+                        break
+            except Exception:
+                pass
+
+        for model in models_to_try[:4]:
             for api_ver in ["v1beta", "v1"]:
-                url = (f"https://generativelanguage.googleapis.com/{api_ver}"
-                       f"/models/{model}:generateContent?key={gemini_api_key}")
-                resp = _req.post(url, json=payload, timeout=30)
+                ep = (f"https://generativelanguage.googleapis.com/{api_ver}"
+                      f"/models/{model}:generateContent?key={gemini_api_key}")
+                resp = _req.post(ep, json=payload, timeout=30)
                 if resp.status_code == 200:
                     return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return "AI summary unavailable — no working Gemini model found."
+
+        return "AI summary unavailable — no working Gemini model found for this API key."
     except Exception as e:
         return f"AI summary error: {e}"

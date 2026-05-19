@@ -208,8 +208,40 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1024}
     }
 
+    # Discover available models for this API key first
+    available_models = []
+    for api_ver in ["v1beta", "v1"]:
+        try:
+            list_resp = _req.get(
+                f"https://generativelanguage.googleapis.com/{api_ver}/models?key={gemini_api_key}",
+                timeout=15
+            )
+            if list_resp.status_code == 200:
+                all_models = list_resp.json().get("models", [])
+                # Filter to generative models, prefer flash variants
+                available_models = [
+                    m["name"].replace("models/", "")
+                    for m in all_models
+                    if "generateContent" in m.get("supportedGenerationMethods", [])
+                    and "gemini" in m.get("name", "").lower()
+                ]
+                if available_models:
+                    # Sort: prefer flash/faster models first
+                    available_models.sort(key=lambda x: (
+                        0 if "flash" in x else 1,
+                        0 if "2.0" in x else (1 if "1.5" in x else 2)
+                    ))
+                    break
+        except Exception:
+            pass
+
+    # Fallback list if discovery fails
+    if not available_models:
+        available_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro",
+                           "gemini-1.0-pro", "gemini-pro"]
+
     last_error = None
-    for model in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
+    for model in available_models[:5]:
         for api_ver in ["v1beta", "v1"]:
             endpoint = (
                 f"https://generativelanguage.googleapis.com/{api_ver}"
@@ -227,8 +259,8 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
                             text = text[4:]
                     competitors = json.loads(text.strip())
                     return competitors if isinstance(competitors, list) else []
-                last_error = f"{resp.status_code}: {resp.text[:300]}"
+                last_error = f"{model}/{api_ver} → {resp.status_code}: {resp.text[:200]}"
             except Exception as e:
-                last_error = str(e)
+                last_error = f"{model}/{api_ver} → {e}"
 
-    raise RuntimeError(f"All Gemini endpoints failed. Last: {last_error}")
+    raise RuntimeError(f"All Gemini endpoints failed. Available models tried: {available_models[:5]}. Last error: {last_error}")
