@@ -1,4 +1,4 @@
-from google import genai
+import requests as _req
 
 
 def get_executive_summary(score, keyword_count, missing_alt_count, word_count):
@@ -86,14 +86,15 @@ Write:
 """
 
     try:
-        client = genai.Client(api_key=gemini_api_key)
-
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt
-        )
-
-        return response.text
-
+        payload = {"contents": [{"parts": [{"text": prompt}]}],
+                   "generationConfig": {"temperature": 0.4, "maxOutputTokens": 1024}}
+        for model in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+            for api_ver in ["v1beta", "v1"]:
+                url = (f"https://generativelanguage.googleapis.com/{api_ver}"
+                       f"/models/{model}:generateContent?key={gemini_api_key}")
+                resp = _req.post(url, json=payload, timeout=30)
+                if resp.status_code == 200:
+                    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        return "AI summary unavailable — no working Gemini model found."
     except Exception as e:
         return f"AI summary error: {e}"

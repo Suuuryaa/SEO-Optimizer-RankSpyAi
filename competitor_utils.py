@@ -176,19 +176,19 @@ def get_primary_result(results, primary_url=""):
 
 def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None):
     """
-    Use Gemini to identify real competitor brands/domains for a given URL.
+    Use Gemini REST API directly (bypasses SDK version issues) to identify
+    real competitor brands/domains for a given URL.
     Returns a list of dicts: [{"name": "...", "domain": "...", "website": "..."}]
     """
-    try:
-        from google import genai
+    import requests as _req
 
-        country_hint = ""
-        if location and location.get("country_name"):
-            country_hint = f"The business operates in {location['country_name']}. Prioritise competitors active in that market with local domains where possible."
+    country_hint = ""
+    if location and location.get("country_name"):
+        country_hint = f"The business operates in {location['country_name']}. Prioritise competitors active in that market with local domains where possible."
 
-        domain = _get_domain(url)
+    domain = _get_domain(url)
 
-        prompt = f"""You are a competitive intelligence analyst.
+    prompt = f"""You are a competitive intelligence analyst.
 
 Given this business website: {url} (domain: {domain})
 Target keyword context: "{keyword}"
@@ -203,37 +203,32 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
   ...
 ]"""
 
-        client = genai.Client(api_key=gemini_api_key)
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1024}
+    }
 
-        # Use same model as summary_utils.py (known working)
-        last_error = None
-        response = None
-        for model_name in ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-flash-8b"]:
+    last_error = None
+    for model in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
+        for api_ver in ["v1beta", "v1"]:
+            endpoint = (
+                f"https://generativelanguage.googleapis.com/{api_ver}"
+                f"/models/{model}:generateContent?key={gemini_api_key}"
+            )
             try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt
-                )
-                break
-            except Exception as me:
-                last_error = me
-                continue
+                resp = _req.post(endpoint, json=payload, timeout=30)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    if "```" in text:
+                        parts = text.split("```")
+                        text = parts[1] if len(parts) > 1 else parts[0]
+                        if text.startswith("json"):
+                            text = text[4:]
+                    competitors = json.loads(text.strip())
+                    return competitors if isinstance(competitors, list) else []
+                last_error = f"{resp.status_code}: {resp.text[:300]}"
+            except Exception as e:
+                last_error = str(e)
 
-        if response is None:
-            raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
-
-        text = response.text.strip()
-        # Strip markdown code fences if present
-        if "```" in text:
-            parts = text.split("```")
-            text = parts[1] if len(parts) > 1 else parts[0]
-            if text.startswith("json"):
-                text = text[4:]
-        text = text.strip()
-
-        competitors = json.loads(text)
-        return competitors if isinstance(competitors, list) else []
-
-    except Exception as e:
-        # Return error info so caller can surface it
-        raise RuntimeError(f"Gemini competitor lookup failed: {e}")
+    raise RuntimeError(f"All Gemini endpoints failed. Last: {last_error}")
