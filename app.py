@@ -452,6 +452,659 @@ def build_recommended_fixes(
     return fixes
 
 
+# ==================== RESULTS RENDER FUNCTIONS ====================
+
+def _render_seo_results(d):
+    """Render the full SEO analysis display from a stored results dict."""
+    from urllib.parse import urlparse as _urlp
+
+    url = d["url"]; keyword = d["keyword"]; score = d["score"]; summary = d["summary"]
+    recommended_fixes = d["recommended_fixes"]; wc = d["wc"]; kc = d["kc"]; kd = d["kd"]
+    internal = d["internal"]; external = d["external"]; missing_alt = d["missing_alt"]
+    title = d["title"]; meta = d["meta"]; h1 = d["h1"]
+    title_has_keyword = d["title_has_keyword"]; meta_has_keyword = d["meta_has_keyword"]
+    h1_has_keyword = d["h1_has_keyword"]; token_counts = d["token_counts"]
+    token_coverage = d["token_coverage"]; title_len = d["title_len"]; meta_len = d["meta_len"]
+    tech_seo = d["tech_seo"]; has_schema = d["has_schema"]; pagespeed_data = d["pagespeed_data"]
+    soup = d["soup"]; compare_url = d["compare_url"]; venue_urls_text = d["venue_urls_text"]
+
+    _, gemini_api_key, pagespeed_api_key, _ = _active_keys()
+
+    _domain = _urlp(url).netloc.replace("www.", "")
+    st.markdown(f"""
+<div style="background:linear-gradient(135deg,#0d0d0d 0%,#111 100%);
+            border:1px solid rgba(176,32,37,0.2);border-radius:16px;
+            padding:1.4rem 2rem;margin:1rem 0 1.5rem;
+            display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+    <div>
+        <div style="font-size:0.6rem;font-weight:800;color:#B02025;letter-spacing:0.18em;
+                    text-transform:uppercase;margin-bottom:0.3rem;">Analysis Complete</div>
+        <div style="font-size:1.1rem;font-weight:700;color:#fff;">{_domain}</div>
+        <div style="font-size:0.78rem;color:rgba(255,255,255,0.35);margin-top:0.1rem;">
+            Keyword: <span style="color:rgba(255,255,255,0.6);">{keyword}</span>
+        </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:0.5rem;">
+        <div style="width:10px;height:10px;border-radius:50%;background:#00C853;
+                    box-shadow:0 0 8px #00C853;"></div>
+        <span style="font-size:0.72rem;font-weight:600;color:rgba(255,255,255,0.45);
+                     letter-spacing:0.08em;text-transform:uppercase;">Report Ready</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # Download report button
+    _rec_html = "".join([f"<div class='card'><p><strong>{r['Issue']}</strong></p><p>{r['Recommended Fix']}</p><p><em>Impact: {r['Impact']}</em></p></div>" for r in recommended_fixes[:10]])
+    _report_html = f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>SEO Report — {_domain}</title>
+<style>body{{font-family:Arial,sans-serif;background:#f8f8f8;color:#222;padding:2rem;max-width:900px;margin:0 auto;}}
+h1{{color:#B02025;border-bottom:2px solid #B02025;padding-bottom:0.5rem;}}
+h2{{color:#333;margin-top:1.5rem;}}
+.card{{background:#fff;border:1px solid #ddd;border-radius:8px;padding:1rem;margin:0.8rem 0;}}
+.metric{{display:inline-block;background:#fff;border:1px solid #ddd;border-radius:6px;padding:0.5rem 1rem;margin:0.3rem;text-align:center;min-width:120px;}}
+.metric .val{{font-size:1.6rem;font-weight:bold;color:#B02025;}}
+.metric .lbl{{font-size:0.7rem;color:#888;text-transform:uppercase;}}
+.pass{{color:#4CAF50;font-weight:bold;}} .fail{{color:#EF5350;font-weight:bold;}}
+</style></head><body>
+<h1>SEO Analysis Report</h1>
+<p><strong>Site:</strong> {url} &nbsp;|&nbsp; <strong>Keyword:</strong> {keyword} &nbsp;|&nbsp; <strong>Score:</strong> {score}/100</p>
+<h2>Key Metrics</h2>
+<div class='metric'><div class='val'>{wc:,}</div><div class='lbl'>Word Count</div></div>
+<div class='metric'><div class='val'>{kc}</div><div class='lbl'>Keyword Hits</div></div>
+<div class='metric'><div class='val'>{kd}%</div><div class='lbl'>Keyword Density</div></div>
+<div class='metric'><div class='val'>{len(internal)}</div><div class='lbl'>Internal Links</div></div>
+<div class='metric'><div class='val'>{len(external)}</div><div class='lbl'>External Links</div></div>
+<div class='metric'><div class='val'>{len(missing_alt)}</div><div class='lbl'>Missing ALTs</div></div>
+<h2>Executive Summary</h2>
+<div class='card'><p><strong>Status:</strong> {summary['Overall Status']}</p>
+<p><strong>Strongest Area:</strong> {summary['Strongest Area']}</p>
+<p><strong>Top Issue:</strong> {summary['Top Issue']}</p>
+<p><strong>Priority Action:</strong> {summary['Priority Action']}</p></div>
+<h2>Technical SEO</h2>
+<div class='card'>
+<p class='{"pass" if tech_seo.get("https_enabled") else "fail"}'>{"✓" if tech_seo.get("https_enabled") else "✗"} HTTPS</p>
+<p class='{"pass" if tech_seo.get("mobile_viewport") else "fail"}'>{"✓" if tech_seo.get("mobile_viewport") else "✗"} Mobile Viewport</p>
+<p class='{"pass" if has_schema else "fail"}'>{"✓" if has_schema else "✗"} Schema Markup</p>
+<p class='{"pass" if tech_seo.get("has_canonical") else "fail"}'>{"✓" if tech_seo.get("has_canonical") else "✗"} Canonical URL</p>
+</div>
+<h2>Recommendations</h2>
+{_rec_html}
+</body></html>"""
+    st.download_button(
+        label="⬇ Download Report (HTML)",
+        data=_report_html.encode("utf-8"),
+        file_name=f"seo_report_{_domain}_{keyword.replace(' ','_')}.html",
+        mime="text/html",
+        key="dl_seo_stored"
+    )
+
+    def _metric(label, val, color):
+        return (f'<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.06);border-top:2px solid {color};border-radius:10px;padding:1rem 1rem 0.8rem;text-align:center;">'
+                f'<div style="font-size:1.8rem;font-weight:800;color:{color};line-height:1;">{val}</div>'
+                f'<div style="font-size:0.6rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-top:0.3rem;">{label}</div>'
+                f'</div>')
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "Technical SEO", "Content Analysis", "Recommendations", "GEO Score"])
+
+    with tab1:
+        # Score Gauge + Key Metrics
+        col_gauge, col_metrics = st.columns([2, 3])
+
+        with col_gauge:
+            st.plotly_chart(create_score_gauge(score), use_container_width=True)
+            st.markdown(f"**Score Band:** {get_score_band(score)}")
+
+        with col_metrics:
+            st.markdown("<div class='section-header'>Key Metrics</div>", unsafe_allow_html=True)
+            kc1, kc2, kc3 = st.columns(3)
+            kc1.markdown(_metric("Word Count", f"{wc:,}", "#B02025"), unsafe_allow_html=True)
+            kc2.markdown(_metric("Keyword Hits", kc, "#00C853" if kc >= 3 else "#EF5350"), unsafe_allow_html=True)
+            kc3.markdown(_metric("Keyword Density", f"{kd}%", "#FF9800"), unsafe_allow_html=True)
+            st.markdown("<div style='margin:0.5rem 0;'></div>", unsafe_allow_html=True)
+            kc4, kc5, kc6 = st.columns(3)
+            kc4.markdown(_metric("Internal Links", len(internal), "#7EC7A3"), unsafe_allow_html=True)
+            kc5.markdown(_metric("External Links", len(external), "#667eea"), unsafe_allow_html=True)
+            kc6.markdown(_metric("Missing ALTs", len(missing_alt), "#EF5350" if missing_alt else "#00C853"), unsafe_allow_html=True)
+
+        # ── Row 2: Radar + SEO factors bar + Link donut ──────────
+        st.markdown("---")
+        r2a, r2b, r2c = st.columns([1.1, 1.1, 0.9])
+
+        with r2a:
+            radar_cats = ["Title", "Meta", "H1", "Keyword\nDensity", "Word\nCount", "Links", "Schema"]
+            radar_vals = [
+                100 if title_has_keyword else 30,
+                100 if meta_has_keyword else 30,
+                100 if h1_has_keyword else 30,
+                min(100, int(kd * 20)) if kd else 0,
+                min(100, int(wc / 15)),
+                min(100, len(internal) * 5 + len(external) * 3),
+                100 if has_schema else 0,
+            ]
+            st.plotly_chart(create_radar_chart(radar_cats, radar_vals, "On-Page SEO Factors"), use_container_width=True)
+
+        with r2b:
+            bar_labels = ["Title Tag", "Meta Desc", "H1 Tag", "Keyword Use", "Content Depth", "Alt Text", "Schema"]
+            bar_vals = [
+                100 if title_has_keyword else (50 if title_len > 10 else 20),
+                100 if meta_has_keyword else (50 if meta_len > 50 else 20),
+                100 if h1_has_keyword else (40 if h1 else 0),
+                min(100, kc * 15),
+                min(100, int(wc / 10)),
+                max(0, 100 - len(missing_alt) * 10),
+                100 if has_schema else 0,
+            ]
+            st.plotly_chart(create_horizontal_bar(bar_labels, bar_vals, title="Factor Scores"), use_container_width=True)
+
+        with r2c:
+            total_links = len(internal) + len(external) or 1
+            st.plotly_chart(create_donut_chart(
+                labels=["Internal", "External"],
+                values=[len(internal), max(len(external), 1)],
+                colors=["#B02025", "#7EC7A3"],
+                title="Link Distribution",
+                center_text=f"{total_links}<br>links"
+            ), use_container_width=True)
+
+        # ── Row 3: Keyword status donut + executive summary ───────
+        st.markdown("---")
+        r3a, r3b = st.columns([1, 2])
+
+        with r3a:
+            kw_present = sum([title_has_keyword, meta_has_keyword, h1_has_keyword, kc > 0])
+            st.plotly_chart(create_donut_chart(
+                labels=["Title", "Meta", "H1", "Body"],
+                values=[1 if title_has_keyword else 0, 1 if meta_has_keyword else 0,
+                        1 if h1_has_keyword else 0, 1 if kc > 0 else 0],
+                colors=["#00C853", "#FFA726", "#667eea", "#26C6DA"],
+                title="Keyword Placement",
+                center_text=f"{kw_present}/4<br><span style='font-size:11px'>covered</span>"
+            ), use_container_width=True)
+
+        with r3b:
+            st.markdown("<div class='section-header'>Executive Summary</div>", unsafe_allow_html=True)
+            _summary_items = [
+                ("#7EC7A3", "Overall Status", summary['Overall Status']),
+                ("#4CAF50", "Strongest Area", summary['Strongest Area']),
+                ("#FF9800", "Top Issue", summary['Top Issue']),
+                ("#B02025", "Priority Action", summary['Priority Action']),
+            ]
+            sc1, sc2 = st.columns(2)
+            for i, (color, label, text) in enumerate(_summary_items):
+                col = sc1 if i % 2 == 0 else sc2
+                col.markdown(f"""
+<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.05);
+            border-left:3px solid {color};border-radius:8px;
+            padding:0.8rem 1rem;margin-bottom:0.6rem;">
+    <div style="font-size:0.58rem;font-weight:800;letter-spacing:0.12em;
+                text-transform:uppercase;color:{color};margin-bottom:0.3rem;">{label}</div>
+    <div style="font-size:0.82rem;color:rgba(255,255,255,0.65);line-height:1.4;">{text}</div>
+</div>""", unsafe_allow_html=True)
+
+    with tab2:
+        st.markdown('<div class="section-header">Technical SEO Audit</div>', unsafe_allow_html=True)
+
+        tech_factors = {
+            "HTTPS": tech_seo.get('https_enabled', False),
+            "Canonical URL": tech_seo.get('has_canonical', False),
+            "Indexable": not tech_seo.get('robots_noindex', True),
+            "Mobile Viewport": tech_seo.get('mobile_viewport', False),
+            "Language Tag": tech_seo.get('has_lang', False),
+            "Single H1": tech_seo.get('proper_h1_usage', False),
+            "Open Graph": tech_seo.get('has_og_title', False),
+            "Twitter Card": tech_seo.get('has_twitter_card', False),
+            "Schema Markup": has_schema,
+        }
+        t_labels = list(tech_factors.keys())
+        t_vals = [100 if v else 0 for v in tech_factors.values()]
+        t_colors = ["#00C853" if v else "#EF5350" for v in tech_factors.values()]
+        st.plotly_chart(create_horizontal_bar(t_labels, t_vals, t_colors, "Technical Audit Score (100 = Pass, 0 = Fail)"), use_container_width=True)
+
+        tech_col1, tech_col2 = st.columns(2)
+
+        with tech_col1:
+            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Security & Protocol</div>', unsafe_allow_html=True)
+            st.markdown(status_indicator(tech_seo.get('https_enabled', False), "HTTPS Enabled"), unsafe_allow_html=True)
+            st.markdown(status_indicator(tech_seo.get('has_canonical', False), "Canonical URL"), unsafe_allow_html=True)
+            st.markdown(status_indicator(not tech_seo.get('robots_noindex', True), "Indexable (No noindex)"), unsafe_allow_html=True)
+
+            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Structured Data</div>', unsafe_allow_html=True)
+            st.markdown(status_indicator(has_schema, "Schema Markup"), unsafe_allow_html=True)
+            if has_schema:
+                schemas = detect_schema_markup(soup)
+                if schemas['json_ld']:
+                    st.info(f"**JSON-LD Types:** {', '.join(schemas['json_ld'])}")
+
+        with tech_col2:
+            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Mobile & Accessibility</div>', unsafe_allow_html=True)
+            st.markdown(status_indicator(tech_seo.get('mobile_viewport', False), "Mobile Viewport"), unsafe_allow_html=True)
+            st.markdown(status_indicator(tech_seo.get('has_lang', False), "Language Attribute"), unsafe_allow_html=True)
+            st.markdown(status_indicator(tech_seo.get('proper_h1_usage', False), "Single H1 Tag"), unsafe_allow_html=True)
+
+            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Social Media</div>', unsafe_allow_html=True)
+            st.markdown(status_indicator(tech_seo.get('has_og_title', False), "Open Graph Title"), unsafe_allow_html=True)
+            st.markdown(status_indicator(tech_seo.get('has_twitter_card', False), "Twitter Card"), unsafe_allow_html=True)
+
+    with tab3:
+        st.markdown('<div class="section-header">Content Analysis</div>', unsafe_allow_html=True)
+
+        content_col1, content_col2 = st.columns(2)
+
+        with content_col1:
+            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:0 0 0.5rem;">On-Page Elements</div>', unsafe_allow_html=True)
+            st.text_input("Title", value=title, disabled=True)
+            st.text_area("Meta Description", value=meta, height=80, disabled=True)
+            st.text_input("H1 Tags", value=", ".join(h1) if h1 else "None", disabled=True)
+
+        with content_col2:
+            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:0 0 0.5rem;">Keyword Analysis</div>', unsafe_allow_html=True)
+            st.markdown(f"**Keyword in Title:** {'✅ Yes' if title_has_keyword else '❌ No'}")
+            st.markdown(f"**Keyword in Meta:** {'✅ Yes' if meta_has_keyword else '❌ No'}")
+            st.markdown(f"**Keyword in H1:** {'✅ Yes' if h1_has_keyword else '❌ No'}")
+            st.markdown(f"**Token Coverage:** {token_coverage}%")
+
+            if token_counts:
+                st.markdown("**Individual Token Counts:**")
+                for token, count in token_counts.items():
+                    st.markdown(f"- *{token}*: {count} times")
+
+    with tab4:
+        st.markdown('<div class="section-header">Recommended Actions</div>', unsafe_allow_html=True)
+
+        _priority_groups = [
+            ("CRITICAL", "#FF5252", [r for r in recommended_fixes if "CRITICAL" in r['Priority']]),
+            ("HIGH PRIORITY", "#FF9800", [r for r in recommended_fixes if "HIGH" in r['Priority']]),
+            ("MEDIUM PRIORITY", "#FFD600", [r for r in recommended_fixes if "MEDIUM" in r['Priority']]),
+        ]
+        for _pg_label, _pg_color, _pg_items in _priority_groups:
+            if not _pg_items:
+                continue
+            st.markdown(f'<div style="font-size:0.6rem;font-weight:800;color:{_pg_color};letter-spacing:0.18em;text-transform:uppercase;margin:1.2rem 0 0.6rem;">{_pg_label} ({len(_pg_items)})</div>', unsafe_allow_html=True)
+            for rec in _pg_items:
+                st.markdown(f"""<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.05);border-left:3px solid {_pg_color};border-radius:10px;padding:1rem 1.2rem;margin-bottom:0.6rem;"><div style="font-size:0.88rem;font-weight:700;color:rgba(255,255,255,0.85);margin-bottom:0.4rem;">{rec['Issue']}</div><div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-bottom:0.3rem;">{rec['Recommended Fix']}</div><div style="font-size:0.7rem;color:rgba(255,255,255,0.28);letter-spacing:0.04em;">Impact: {rec['Impact']}</div></div>""", unsafe_allow_html=True)
+
+        _excellent = [r for r in recommended_fixes if "EXCELLENT" in r['Priority']]
+        if _excellent:
+            for rec in _excellent:
+                st.markdown(f"""<div style="background:#0a0a0a;border:1px solid rgba(76,175,80,0.2);border-left:3px solid #4CAF50;border-radius:10px;padding:1rem 1.2rem;margin-bottom:0.6rem;"><div style="font-size:0.88rem;font-weight:700;color:#4CAF50;">✓ {rec['Issue']}</div><div style="font-size:0.8rem;color:rgba(255,255,255,0.4);margin-top:0.3rem;">{rec['Recommended Fix']}</div></div>""", unsafe_allow_html=True)
+
+    with tab5:
+        st.markdown('<div class="section-header">GEO Score — AI Search Visibility</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.8rem;color:rgba(255,255,255,0.35);margin-bottom:1rem;">How well this page is optimized for ChatGPT, Claude, Perplexity, and Google AI Overviews</div>', unsafe_allow_html=True)
+
+        with st.spinner("Running GEO analysis..."):
+            geo_crawlers   = check_ai_crawlers(url)
+            geo_citability = score_citability(soup)
+            geo_llmstxt    = check_llmstxt(url)
+            geo_eeat       = check_eeat(soup, url)
+            geo_result     = calculate_geo_score(
+                crawler_score    = geo_crawlers["score"],
+                citability_score = geo_citability["score"],
+                eeat_score       = geo_eeat["score"],
+                llmstxt_exists   = geo_llmstxt["exists"],
+                has_schema       = has_schema
+            )
+
+        geo_col1, geo_col2 = st.columns([2, 3])
+        with geo_col1:
+            st.plotly_chart(
+                create_score_gauge(geo_result["score"], title="GEO Score"),
+                use_container_width=True
+            )
+            st.markdown(f"**Band:** {geo_result['band']}")
+
+        with geo_col2:
+            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:0 0 0.8rem;">Score Breakdown</div>', unsafe_allow_html=True)
+            breakdown = geo_result["breakdown"]
+            for key, data in breakdown.items():
+                label = {"citability": "Content Citability", "eeat": "E-E-A-T",
+                         "crawlers": "AI Crawler Access", "schema": "Schema Markup",
+                         "llmstxt": "llms.txt"}.get(key, key)
+                bar_pct = int(data["score"])
+                st.markdown(f"**{label}** — {bar_pct}/100")
+                st.progress(bar_pct / 100)
+
+        st.markdown("---")
+
+        geo_c1, geo_c2 = st.columns(2)
+
+        with geo_c1:
+            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:0 0 0.5rem;">AI Crawler Access</div>', unsafe_allow_html=True)
+            st.caption(f"robots.txt score: **{geo_crawlers['score']}/100**")
+            for crawler in geo_crawlers["crawlers"]:
+                icon = "✅" if crawler["status"] == "allowed" else ("❌" if crawler["status"] == "blocked" else "⚠️")
+                badge = "🔴" if crawler["priority"] == "critical" else "🟡"
+                st.markdown(f"{icon} {badge} **{crawler['name']}** — {crawler['status']}")
+            sitemap_icon = "✅" if geo_crawlers["has_sitemap"] else "❌"
+            st.markdown(f"{sitemap_icon} Sitemap in robots.txt")
+
+        with geo_c2:
+            st.markdown("#### 📄 llms.txt & E-E-A-T")
+
+            if geo_llmstxt["exists"]:
+                st.success(f"✅ llms.txt found — {geo_llmstxt['sections']} sections, {geo_llmstxt['links']} links")
+            else:
+                st.warning("❌ No llms.txt found — consider adding one to guide AI crawlers")
+                st.markdown("[What is llms.txt?](https://llmstxt.org)")
+
+            st.markdown("**E-E-A-T Signals**")
+            signals = geo_eeat["signals"]
+            eeat_items = [
+                ("Author byline",    signals.get("has_author", False)),
+                ("Publication date", signals.get("has_date", False)),
+                ("About page",       signals.get("has_about", False)),
+                ("Contact page",     signals.get("has_contact", False)),
+                ("Privacy policy",   signals.get("has_privacy", False)),
+                ("HTTPS",            signals.get("has_https", False)),
+            ]
+            for label, passed in eeat_items:
+                st.markdown(status_indicator(passed, label), unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        st.markdown("#### ✍️ Content Citability")
+        st.caption("How likely AI models are to directly quote/cite content from this page")
+        cit_col1, cit_col2, cit_col3 = st.columns(3)
+        with cit_col1:
+            st.metric("Citability Score", f"{geo_citability['score']}/100")
+        with cit_col2:
+            st.metric("Grade", f"{geo_citability['grade']} — {geo_citability['grade_label']}")
+        with cit_col3:
+            st.metric("Optimal Blocks", f"{geo_citability['optimal_blocks']} / {geo_citability['blocks_analyzed']}")
+
+        if geo_citability.get("top_blocks"):
+            with st.expander("📋 Top Citable Content Blocks", expanded=False):
+                for block in geo_citability["top_blocks"][:3]:
+                    st.markdown(f"**{block.get('heading', 'No heading')}** — Score: {block['score']}/100 ({block['grade']}) | {block['word_count']} words")
+                    st.caption(block.get("preview", ""))
+                    st.markdown("---")
+
+    # PageSpeed Section (if available)
+    if pagespeed_data:
+        st.markdown("---")
+        st.markdown("### ⚡ PageSpeed Insights (Mobile)")
+
+        ps_cols = st.columns(4)
+
+        with ps_cols[0]:
+            perf_score = int(pagespeed_data.get("performance_score", 0) * 100)
+            st.metric("Performance", f"{perf_score}/100")
+
+        with ps_cols[1]:
+            acc_score = int(pagespeed_data.get("accessibility_score", 0) * 100)
+            st.metric("Accessibility", f"{acc_score}/100")
+
+        with ps_cols[2]:
+            bp_score = int(pagespeed_data.get("best_practices_score", 0) * 100)
+            st.metric("Best Practices", f"{bp_score}/100")
+
+        with ps_cols[3]:
+            seo_score = int(pagespeed_data.get("seo_score", 0) * 100)
+            st.metric("SEO", f"{seo_score}/100")
+
+        st.markdown("**Core Web Vitals:**")
+        vital_cols = st.columns(5)
+
+        with vital_cols[0]:
+            st.text(f"FCP: {pagespeed_data.get('first_contentful_paint', 'N/A')}")
+        with vital_cols[1]:
+            st.text(f"LCP: {pagespeed_data.get('largest_contentful_paint', 'N/A')}")
+        with vital_cols[2]:
+            st.text(f"SI: {pagespeed_data.get('speed_index', 'N/A')}")
+        with vital_cols[3]:
+            st.text(f"TBT: {pagespeed_data.get('total_blocking_time', 'N/A')}")
+        with vital_cols[4]:
+            st.text(f"CLS: {pagespeed_data.get('cumulative_layout_shift', 'N/A')}")
+
+    # Comparison Section (if URL provided)
+    if compare_url:
+        st.markdown("---")
+        st.markdown("### 📊 Side-by-Side Comparison")
+
+        try:
+            comp_soup, _ = get_page_soup(compare_url)
+            comp_title = get_title(comp_soup)
+            comp_meta = get_meta_description(comp_soup)
+            comp_h1 = get_h1_tags(comp_soup)
+            comp_text = get_text_content(comp_soup)
+            comp_wc = count_words(comp_text)
+            comp_kc = count_keyword(comp_text, keyword)
+            comp_kd = keyword_density(comp_text, keyword)
+            comp_internal, comp_external = get_links(comp_soup, compare_url)
+            comp_missing_alt = get_images_missing_alt(comp_soup)
+            comp_tech = check_technical_seo(compare_url, comp_soup)
+            comp_has_schema = has_schema_markup(comp_soup)
+
+            comp_score, _ = calculate_seo_score(
+                comp_title, comp_meta, comp_h1, comp_kc, comp_wc,
+                len(comp_missing_alt),
+                keyword_in_title(comp_title, keyword),
+                keyword_in_meta(comp_meta, keyword),
+                keyword_in_h1(comp_h1, keyword),
+                title_length(comp_title),
+                meta_description_length(comp_meta),
+                len(comp_internal), len(comp_external),
+                comp_has_schema,
+                comp_tech.get('https_enabled', False),
+                comp_tech.get('mobile_viewport', False)
+            )
+
+            comp_data_table = {
+                "Metric": ["SEO Score", "Word Count", "Keyword Count", "Keyword Density",
+                          "Internal Links", "External Links", "Missing ALT"],
+                "Primary Venue": [score, wc, kc, f"{kd}%", len(internal), len(external), len(missing_alt)],
+                "Comparison Venue": [comp_score, comp_wc, comp_kc, f"{comp_kd}%",
+                                   len(comp_internal), len(comp_external), len(comp_missing_alt)],
+                "Winner": [
+                    compare_metric(score, comp_score),
+                    compare_metric(wc, comp_wc),
+                    compare_metric(kc, comp_kc),
+                    compare_metric(kd, comp_kd),
+                    compare_metric(len(internal), len(comp_internal)),
+                    compare_metric(len(external), len(comp_external)),
+                    compare_metric(len(missing_alt), len(comp_missing_alt), higher_is_better=False)
+                ]
+            }
+
+            st.dataframe(pd.DataFrame(comp_data_table), use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Error analyzing comparison URL: {e}")
+
+    # Multi-Venue Leaderboard
+    if venue_urls_text.strip():
+        st.markdown("---")
+        st.markdown("### 🏆 Multi-Venue Leaderboard")
+
+        venue_urls = [u.strip() for u in venue_urls_text.strip().split("\n") if u.strip()]
+
+        if venue_urls:
+            leaderboard_progress = st.progress(0)
+            leaderboard_rows = []
+
+            for idx, venue_url in enumerate(venue_urls):
+                try:
+                    leaderboard_progress.progress((idx + 1) / len(venue_urls))
+                    venue_data = analyze_venue(venue_url, keyword)
+                    leaderboard_rows.append(venue_data)
+                except Exception:
+                    st.warning(f"Could not analyze: {venue_url}")
+
+            leaderboard_progress.empty()
+
+            if leaderboard_rows:
+                leaderboard_df = pd.DataFrame(leaderboard_rows)
+                leaderboard_df = leaderboard_df.sort_values(by="SEO Score", ascending=False)
+
+                st.dataframe(leaderboard_df, use_container_width=True)
+
+                chart = px.bar(
+                    leaderboard_df.reset_index(),
+                    x="Venue Name",
+                    y="SEO Score",
+                    color="Score Band",
+                    text="SEO Score",
+                    title="Venue SEO Score Comparison"
+                )
+
+                st.plotly_chart(chart, use_container_width=True)
+
+
+def _render_comp_results(d):
+    """Render the full competitor analysis display from a stored results dict."""
+    url = d["url"]; keyword = d["keyword"]; country = d["country"]
+    benchmark_rows = d["benchmark_rows"]; gemini_competitors = d["gemini_competitors"]
+
+    _, gemini_api_key, _, _ = _active_keys()
+
+    benchmark_df = pd.DataFrame(benchmark_rows)
+
+    error_rows = [r for r in benchmark_rows if r.get("Score Band") == "Blocked"]
+    valid_rows = [r for r in benchmark_rows if r.get("Score Band") != "Blocked"]
+
+    if error_rows:
+        blocked = [r["Venue Name"] for r in error_rows]
+        st.warning(f"⚠️ {len(error_rows)} site(s) blocked automated access (common for large corporate sites): {', '.join(blocked)}")
+
+    primary_row = next((r for r in valid_rows if "Primary" in r.get("Role", "")), None)
+
+    if not primary_row:
+        st.error(f"❌ Could not fetch **{url}** — the site blocks automated requests. Try a different URL that doesn't block bots.")
+        valid_comp_rows = [r for r in valid_rows if "Competitor" in r.get("Role", "")]
+        if valid_comp_rows:
+            st.markdown("### 📊 Competitor Scores (primary site unavailable)")
+
+    if valid_rows:
+        primary_valid = [r for r in valid_rows if "Primary" in r.get("Role", "")]
+        comp_valid = sorted(
+            [r for r in valid_rows if "Competitor" in r.get("Role", "")],
+            key=lambda x: x.get("SEO Score", 0), reverse=True
+        )[:10]
+        chart_rows = primary_valid + comp_valid
+        valid_df = pd.DataFrame(chart_rows)
+        from urllib.parse import urlparse as _up
+        valid_df["Label"] = valid_df["URL"].apply(
+            lambda u: _up(u).netloc.replace("www.", "") if u else ""
+        )
+        valid_df = valid_df.sort_values("SEO Score", ascending=True)
+        fig = px.bar(
+            valid_df,
+            x="SEO Score",
+            y="Label",
+            color="Role",
+            text="SEO Score",
+            orientation="h",
+            color_discrete_map={"🏠 Primary Venue": "#B02025", "🎯 Competitor": "#555555"},
+            title=f"SEO Score vs Competitors — '{keyword}'"
+        )
+        fig.update_traces(textposition="outside", textfont_size=11,
+                          marker_line_width=0)
+        chart_height = max(380, len(chart_rows) * 38)
+        fig.update_layout(
+            height=chart_height,
+            showlegend=True,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="rgba(255,255,255,0.7)", family="Outfit"),
+            title_font=dict(size=13, color="rgba(255,255,255,0.5)"),
+            xaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False),
+            yaxis=dict(gridcolor="rgba(0,0,0,0)"),
+            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
+            margin=dict(l=10, r=60, t=40, b=20),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    if primary_row:
+        best_comp = max(
+            [r for r in valid_rows if "Competitor" in r.get("Role", "")],
+            key=lambda x: x.get("SEO Score", 0),
+            default={}
+        )
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Your SEO Score", primary_row.get("SEO Score", 0))
+        m2.metric("Best Competitor Score", best_comp.get("SEO Score", "N/A") if best_comp else "N/A")
+        if best_comp:
+            gap = primary_row.get("SEO Score", 0) - best_comp.get("SEO Score", 0)
+            m3.metric("Gap vs Best", f"{gap:+d}", delta_color="normal")
+        all_comps = [r for r in benchmark_rows if "Competitor" in r.get("Role","")]
+        m4.metric("Competitors Analysed", len(all_comps))
+
+    st.markdown("""<div style="font-size:0.6rem;font-weight:800;color:#B02025;
+        letter-spacing:0.18em;text-transform:uppercase;margin:1.5rem 0 0.5rem;">
+        Full Comparison — All Venues</div>""", unsafe_allow_html=True)
+    display_cols = ["Role", "Venue Name", "SEO Score", "Score Band", "Word Count", "HTTPS", "Schema"]
+    available_cols = [c for c in display_cols if c in benchmark_df.columns]
+    st.dataframe(benchmark_df[available_cols], use_container_width=True)
+
+    if primary_row and gemini_api_key:
+        st.markdown("""
+<div style="font-size:0.6rem;font-weight:800;color:#B02025;letter-spacing:0.18em;
+            text-transform:uppercase;margin:2rem 0 0.8rem;">AI Executive Report</div>
+""", unsafe_allow_html=True)
+        best_comp = max(
+            [r for r in valid_rows if "Competitor" in r.get("Role", "")],
+            key=lambda x: x.get("SEO Score", 0),
+            default={}
+        )
+        best_comp_name = best_comp.get("Venue Name", "top competitor") if best_comp else "N/A"
+
+        insights = generate_strategic_insights(
+            primary_row=primary_row,
+            benchmark_rows=benchmark_rows,
+            keyword=keyword
+        )
+
+        with st.spinner("Generating AI analysis report..."):
+            ai_summary = generate_ai_executive_summary(
+                gemini_api_key=gemini_api_key,
+                primary_name=primary_row.get("Venue Name", url),
+                keyword=keyword,
+                primary_rank="N/A",
+                primary_score=primary_row.get("SEO Score", 0),
+                top_competitor=best_comp_name,
+                strategic_insights=insights,
+                recommended_fixes=[],
+                benchmark_rows=benchmark_rows,
+            )
+        if ai_summary:
+            import re as _re
+            section_colors = {
+                "executive summary": "#7EC7A3",
+                "strengths": "#4CAF50",
+                "weaknesses": "#FF5252",
+                "keyword": "#FF9800",
+                "technical": "#B02025",
+                "competitor": "#667eea",
+                "priority": "#FFD600",
+                "conclusion": "#7EC7A3",
+            }
+            sections = _re.split(r'\n#{1,3}\s+', "\n" + ai_summary)
+            for sec in sections:
+                if not sec.strip():
+                    continue
+                lines = sec.strip().split("\n", 1)
+                title = lines[0].strip().lstrip("#").strip()
+                body = lines[1].strip() if len(lines) > 1 else ""
+                color = "#B02025"
+                for k, v in section_colors.items():
+                    if k in title.lower():
+                        color = v
+                        break
+                body_html = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                body_html = _re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:rgba(255,255,255,0.9);">\1</strong>', body_html)
+                body_html = _re.sub(r'^\s*[-•]\s+', '<li>', body_html, flags=_re.MULTILINE)
+                body_html = _re.sub(r'^\s*\d+\.\s+', '<li style="margin-bottom:0.4rem">', body_html, flags=_re.MULTILINE)
+                body_html = body_html.replace("\n", "<br>")
+                st.markdown(f"""
+<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.06);
+            border-left:3px solid {color};border-radius:12px;
+            padding:1.4rem 1.8rem;margin-bottom:1rem;">
+    <div style="font-size:0.7rem;font-weight:800;letter-spacing:0.14em;
+                text-transform:uppercase;color:{color};margin-bottom:0.8rem;">{title}</div>
+    <div style="font-size:0.88rem;color:rgba(255,255,255,0.65);line-height:1.75;">{body_html}</div>
+</div>
+""", unsafe_allow_html=True)
+
+
 # ==================== PAGE CONFIG ====================
 
 st.set_page_config(
@@ -1447,496 +2100,14 @@ if analyze_clicked:
             st.session_state.has_seo_results = True
 
             # ==================== DISPLAY RESULTS ====================
-            from urllib.parse import urlparse as _urlp
-            _domain = _urlp(url).netloc.replace("www.", "")
-            st.markdown(f"""
-<div style="background:linear-gradient(135deg,#0d0d0d 0%,#111 100%);
-            border:1px solid rgba(176,32,37,0.2);border-radius:16px;
-            padding:1.4rem 2rem;margin:1rem 0 1.5rem;
-            display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
-    <div>
-        <div style="font-size:0.6rem;font-weight:800;color:#B02025;letter-spacing:0.18em;
-                    text-transform:uppercase;margin-bottom:0.3rem;">Analysis Complete</div>
-        <div style="font-size:1.1rem;font-weight:700;color:#fff;">{_domain}</div>
-        <div style="font-size:0.78rem;color:rgba(255,255,255,0.35);margin-top:0.1rem;">
-            Keyword: <span style="color:rgba(255,255,255,0.6);">{keyword}</span>
-        </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:0.5rem;">
-        <div style="width:10px;height:10px;border-radius:50%;background:#00C853;
-                    box-shadow:0 0 8px #00C853;"></div>
-        <span style="font-size:0.72rem;font-weight:600;color:rgba(255,255,255,0.45);
-                     letter-spacing:0.08em;text-transform:uppercase;">Report Ready</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-            # Download report button
-            _rec_html = "".join([f"<div class='card'><p><strong>{r['Issue']}</strong></p><p>{r['Recommended Fix']}</p><p><em>Impact: {r['Impact']}</em></p></div>" for r in recommended_fixes[:10]])
-            _report_html = f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>SEO Report — {_domain}</title>
-<style>body{{font-family:Arial,sans-serif;background:#f8f8f8;color:#222;padding:2rem;max-width:900px;margin:0 auto;}}
-h1{{color:#B02025;border-bottom:2px solid #B02025;padding-bottom:0.5rem;}}
-h2{{color:#333;margin-top:1.5rem;}}
-.card{{background:#fff;border:1px solid #ddd;border-radius:8px;padding:1rem;margin:0.8rem 0;}}
-.metric{{display:inline-block;background:#fff;border:1px solid #ddd;border-radius:6px;padding:0.5rem 1rem;margin:0.3rem;text-align:center;min-width:120px;}}
-.metric .val{{font-size:1.6rem;font-weight:bold;color:#B02025;}}
-.metric .lbl{{font-size:0.7rem;color:#888;text-transform:uppercase;}}
-.pass{{color:#4CAF50;font-weight:bold;}} .fail{{color:#EF5350;font-weight:bold;}}
-</style></head><body>
-<h1>SEO Analysis Report</h1>
-<p><strong>Site:</strong> {url} &nbsp;|&nbsp; <strong>Keyword:</strong> {keyword} &nbsp;|&nbsp; <strong>Score:</strong> {score}/100</p>
-<h2>Key Metrics</h2>
-<div class='metric'><div class='val'>{wc:,}</div><div class='lbl'>Word Count</div></div>
-<div class='metric'><div class='val'>{kc}</div><div class='lbl'>Keyword Hits</div></div>
-<div class='metric'><div class='val'>{kd}%</div><div class='lbl'>Keyword Density</div></div>
-<div class='metric'><div class='val'>{len(internal)}</div><div class='lbl'>Internal Links</div></div>
-<div class='metric'><div class='val'>{len(external)}</div><div class='lbl'>External Links</div></div>
-<div class='metric'><div class='val'>{len(missing_alt)}</div><div class='lbl'>Missing ALTs</div></div>
-<h2>Executive Summary</h2>
-<div class='card'><p><strong>Status:</strong> {summary['Overall Status']}</p>
-<p><strong>Strongest Area:</strong> {summary['Strongest Area']}</p>
-<p><strong>Top Issue:</strong> {summary['Top Issue']}</p>
-<p><strong>Priority Action:</strong> {summary['Priority Action']}</p></div>
-<h2>Technical SEO</h2>
-<div class='card'>
-<p class='{"pass" if tech_seo.get("https_enabled") else "fail"}'>{"✓" if tech_seo.get("https_enabled") else "✗"} HTTPS</p>
-<p class='{"pass" if tech_seo.get("mobile_viewport") else "fail"}'>{"✓" if tech_seo.get("mobile_viewport") else "✗"} Mobile Viewport</p>
-<p class='{"pass" if has_schema else "fail"}'>{"✓" if has_schema else "✗"} Schema Markup</p>
-<p class='{"pass" if tech_seo.get("has_canonical") else "fail"}'>{"✓" if tech_seo.get("has_canonical") else "✗"} Canonical URL</p>
-</div>
-<h2>Recommendations</h2>
-{_rec_html}
-</body></html>"""
-            st.download_button(
-                label="⬇ Download Report (HTML)",
-                data=_report_html.encode("utf-8"),
-                file_name=f"seo_report_{_domain}_{keyword.replace(' ','_')}.html",
-                mime="text/html",
-                key="download_seo_report"
-            )
-
-            tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "Technical SEO", "Content Analysis", "Recommendations", "GEO Score"])
-
-            with tab1:
-                # Score Gauge + Key Metrics
-                col_gauge, col_metrics = st.columns([2, 3])
-                
-                with col_gauge:
-                    st.plotly_chart(create_score_gauge(score), use_container_width=True)
-                    st.markdown(f"**Score Band:** {get_score_band(score)}")
-
-                with col_metrics:
-                    st.markdown("<div class='section-header'>Key Metrics</div>", unsafe_allow_html=True)
-                    def _metric(label, val, color):
-                        return (f'<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.06);border-top:2px solid {color};border-radius:10px;padding:1rem 1rem 0.8rem;text-align:center;">'
-                                f'<div style="font-size:1.8rem;font-weight:800;color:{color};line-height:1;">{val}</div>'
-                                f'<div style="font-size:0.6rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-top:0.3rem;">{label}</div>'
-                                f'</div>')
-                    kc1, kc2, kc3 = st.columns(3)
-                    kc1.markdown(_metric("Word Count", f"{wc:,}", "#B02025"), unsafe_allow_html=True)
-                    kc2.markdown(_metric("Keyword Hits", kc, "#00C853" if kc >= 3 else "#EF5350"), unsafe_allow_html=True)
-                    kc3.markdown(_metric("Keyword Density", f"{kd}%", "#FF9800"), unsafe_allow_html=True)
-                    st.markdown("<div style='margin:0.5rem 0;'></div>", unsafe_allow_html=True)
-                    kc4, kc5, kc6 = st.columns(3)
-                    kc4.markdown(_metric("Internal Links", len(internal), "#7EC7A3"), unsafe_allow_html=True)
-                    kc5.markdown(_metric("External Links", len(external), "#667eea"), unsafe_allow_html=True)
-                    kc6.markdown(_metric("Missing ALTs", len(missing_alt), "#EF5350" if missing_alt else "#00C853"), unsafe_allow_html=True)
-
-                # ── Row 2: Radar + SEO factors bar + Link donut ──────────
-                st.markdown("---")
-                r2a, r2b, r2c = st.columns([1.1, 1.1, 0.9])
-
-                with r2a:
-                    # Radar chart: on-page SEO factors
-                    radar_cats = ["Title", "Meta", "H1", "Keyword\nDensity", "Word\nCount", "Links", "Schema"]
-                    radar_vals = [
-                        100 if title_has_keyword else 30,
-                        100 if meta_has_keyword else 30,
-                        100 if h1_has_keyword else 30,
-                        min(100, int(kd * 20)) if kd else 0,
-                        min(100, int(wc / 15)),
-                        min(100, len(internal) * 5 + len(external) * 3),
-                        100 if has_schema else 0,
-                    ]
-                    st.plotly_chart(create_radar_chart(radar_cats, radar_vals, "On-Page SEO Factors"), use_container_width=True)
-
-                with r2b:
-                    # Horizontal bar: factor scores
-                    bar_labels = ["Title Tag", "Meta Desc", "H1 Tag", "Keyword Use", "Content Depth", "Alt Text", "Schema"]
-                    bar_vals = [
-                        100 if title_has_keyword else (50 if title_len > 10 else 20),
-                        100 if meta_has_keyword else (50 if meta_len > 50 else 20),
-                        100 if h1_has_keyword else (40 if h1 else 0),
-                        min(100, kc * 15),
-                        min(100, int(wc / 10)),
-                        max(0, 100 - len(missing_alt) * 10),
-                        100 if has_schema else 0,
-                    ]
-                    st.plotly_chart(create_horizontal_bar(bar_labels, bar_vals, title="Factor Scores"), use_container_width=True)
-
-                with r2c:
-                    total_links = len(internal) + len(external) or 1
-                    st.plotly_chart(create_donut_chart(
-                        labels=["Internal", "External"],
-                        values=[len(internal), max(len(external), 1)],
-                        colors=["#B02025", "#7EC7A3"],
-                        title="Link Distribution",
-                        center_text=f"{total_links}<br>links"
-                    ), use_container_width=True)
-
-                # ── Row 3: Keyword status donut + executive summary ───────
-                st.markdown("---")
-                r3a, r3b = st.columns([1, 2])
-
-                with r3a:
-                    kw_present = sum([title_has_keyword, meta_has_keyword, h1_has_keyword, kc > 0])
-                    st.plotly_chart(create_donut_chart(
-                        labels=["Title", "Meta", "H1", "Body"],
-                        values=[1 if title_has_keyword else 0, 1 if meta_has_keyword else 0,
-                                1 if h1_has_keyword else 0, 1 if kc > 0 else 0],
-                        colors=["#00C853", "#FFA726", "#667eea", "#26C6DA"],
-                        title="Keyword Placement",
-                        center_text=f"{kw_present}/4<br><span style='font-size:11px'>covered</span>"
-                    ), use_container_width=True)
-
-                with r3b:
-                    st.markdown("<div class='section-header'>Executive Summary</div>", unsafe_allow_html=True)
-                    _summary_items = [
-                        ("#7EC7A3", "Overall Status", summary['Overall Status']),
-                        ("#4CAF50", "Strongest Area", summary['Strongest Area']),
-                        ("#FF9800", "Top Issue", summary['Top Issue']),
-                        ("#B02025", "Priority Action", summary['Priority Action']),
-                    ]
-                    sc1, sc2 = st.columns(2)
-                    for i, (color, label, text) in enumerate(_summary_items):
-                        col = sc1 if i % 2 == 0 else sc2
-                        col.markdown(f"""
-<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.05);
-            border-left:3px solid {color};border-radius:8px;
-            padding:0.8rem 1rem;margin-bottom:0.6rem;">
-    <div style="font-size:0.58rem;font-weight:800;letter-spacing:0.12em;
-                text-transform:uppercase;color:{color};margin-bottom:0.3rem;">{label}</div>
-    <div style="font-size:0.82rem;color:rgba(255,255,255,0.65);line-height:1.4;">{text}</div>
-</div>""", unsafe_allow_html=True)
-
-            with tab2:
-                st.markdown('<div class="section-header">Technical SEO Audit</div>', unsafe_allow_html=True)
-
-                # Technical score bar chart
-                tech_factors = {
-                    "HTTPS": tech_seo.get('https_enabled', False),
-                    "Canonical URL": tech_seo.get('has_canonical', False),
-                    "Indexable": not tech_seo.get('robots_noindex', True),
-                    "Mobile Viewport": tech_seo.get('mobile_viewport', False),
-                    "Language Tag": tech_seo.get('has_lang', False),
-                    "Single H1": tech_seo.get('proper_h1_usage', False),
-                    "Open Graph": tech_seo.get('has_og_title', False),
-                    "Twitter Card": tech_seo.get('has_twitter_card', False),
-                    "Schema Markup": has_schema,
-                }
-                t_labels = list(tech_factors.keys())
-                t_vals = [100 if v else 0 for v in tech_factors.values()]
-                t_colors = ["#00C853" if v else "#EF5350" for v in tech_factors.values()]
-                st.plotly_chart(create_horizontal_bar(t_labels, t_vals, t_colors, "Technical Audit Score (100 = Pass, 0 = Fail)"), use_container_width=True)
-
-                tech_col1, tech_col2 = st.columns(2)
-                
-                with tech_col1:
-                    st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Security & Protocol</div>', unsafe_allow_html=True)
-                    st.markdown(status_indicator(tech_seo.get('https_enabled', False), "HTTPS Enabled"), unsafe_allow_html=True)
-                    st.markdown(status_indicator(tech_seo.get('has_canonical', False), "Canonical URL"), unsafe_allow_html=True)
-                    st.markdown(status_indicator(not tech_seo.get('robots_noindex', True), "Indexable (No noindex)"), unsafe_allow_html=True)
-                    
-                    st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Structured Data</div>', unsafe_allow_html=True)
-                    st.markdown(status_indicator(has_schema, "Schema Markup"), unsafe_allow_html=True)
-                    if has_schema:
-                        schemas = detect_schema_markup(soup)
-                        if schemas['json_ld']:
-                            st.info(f"**JSON-LD Types:** {', '.join(schemas['json_ld'])}")
-                
-                with tech_col2:
-                    st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Mobile & Accessibility</div>', unsafe_allow_html=True)
-                    st.markdown(status_indicator(tech_seo.get('mobile_viewport', False), "Mobile Viewport"), unsafe_allow_html=True)
-                    st.markdown(status_indicator(tech_seo.get('has_lang', False), "Language Attribute"), unsafe_allow_html=True)
-                    st.markdown(status_indicator(tech_seo.get('proper_h1_usage', False), "Single H1 Tag"), unsafe_allow_html=True)
-                    
-                    st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Social Media</div>', unsafe_allow_html=True)
-                    st.markdown(status_indicator(tech_seo.get('has_og_title', False), "Open Graph Title"), unsafe_allow_html=True)
-                    st.markdown(status_indicator(tech_seo.get('has_twitter_card', False), "Twitter Card"), unsafe_allow_html=True)
-
-            with tab3:
-                st.markdown('<div class="section-header">Content Analysis</div>', unsafe_allow_html=True)
-                
-                content_col1, content_col2 = st.columns(2)
-                
-                with content_col1:
-                    st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:0 0 0.5rem;">On-Page Elements</div>', unsafe_allow_html=True)
-                    st.text_input("Title", value=title, disabled=True)
-                    st.text_area("Meta Description", value=meta, height=80, disabled=True)
-                    st.text_input("H1 Tags", value=", ".join(h1) if h1 else "None", disabled=True)
-                    
-                with content_col2:
-                    st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:0 0 0.5rem;">Keyword Analysis</div>', unsafe_allow_html=True)
-                    st.markdown(f"**Keyword in Title:** {'✅ Yes' if title_has_keyword else '❌ No'}")
-                    st.markdown(f"**Keyword in Meta:** {'✅ Yes' if meta_has_keyword else '❌ No'}")
-                    st.markdown(f"**Keyword in H1:** {'✅ Yes' if h1_has_keyword else '❌ No'}")
-                    st.markdown(f"**Token Coverage:** {token_coverage}%")
-                    
-                    if token_counts:
-                        st.markdown("**Individual Token Counts:**")
-                        for token, count in token_counts.items():
-                            st.markdown(f"- *{token}*: {count} times")
-
-            with tab4:
-                st.markdown('<div class="section-header">Recommended Actions</div>', unsafe_allow_html=True)
-
-                _priority_groups = [
-                    ("CRITICAL", "#FF5252", critical if 'critical' in dir() else [r for r in recommended_fixes if "CRITICAL" in r['Priority']]),
-                    ("HIGH PRIORITY", "#FF9800", [r for r in recommended_fixes if "HIGH" in r['Priority']]),
-                    ("MEDIUM PRIORITY", "#FFD600", [r for r in recommended_fixes if "MEDIUM" in r['Priority']]),
-                ]
-                for _pg_label, _pg_color, _pg_items in _priority_groups:
-                    if not _pg_items:
-                        continue
-                    st.markdown(f'<div style="font-size:0.6rem;font-weight:800;color:{_pg_color};letter-spacing:0.18em;text-transform:uppercase;margin:1.2rem 0 0.6rem;">{_pg_label} ({len(_pg_items)})</div>', unsafe_allow_html=True)
-                    for rec in _pg_items:
-                        st.markdown(f"""<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.05);border-left:3px solid {_pg_color};border-radius:10px;padding:1rem 1.2rem;margin-bottom:0.6rem;"><div style="font-size:0.88rem;font-weight:700;color:rgba(255,255,255,0.85);margin-bottom:0.4rem;">{rec['Issue']}</div><div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-bottom:0.3rem;">{rec['Recommended Fix']}</div><div style="font-size:0.7rem;color:rgba(255,255,255,0.28);letter-spacing:0.04em;">Impact: {rec['Impact']}</div></div>""", unsafe_allow_html=True)
-
-                _excellent = [r for r in recommended_fixes if "EXCELLENT" in r['Priority']]
-                if _excellent:
-                    for rec in _excellent:
-                        st.markdown(f"""<div style="background:#0a0a0a;border:1px solid rgba(76,175,80,0.2);border-left:3px solid #4CAF50;border-radius:10px;padding:1rem 1.2rem;margin-bottom:0.6rem;"><div style="font-size:0.88rem;font-weight:700;color:#4CAF50;">✓ {rec['Issue']}</div><div style="font-size:0.8rem;color:rgba(255,255,255,0.4);margin-top:0.3rem;">{rec['Recommended Fix']}</div></div>""", unsafe_allow_html=True)
-
-            with tab5:
-                st.markdown('<div class="section-header">GEO Score — AI Search Visibility</div>', unsafe_allow_html=True)
-                st.markdown('<div style="font-size:0.8rem;color:rgba(255,255,255,0.35);margin-bottom:1rem;">How well this page is optimized for ChatGPT, Claude, Perplexity, and Google AI Overviews</div>', unsafe_allow_html=True)
-
-                with st.spinner("Running GEO analysis..."):
-                    geo_crawlers   = check_ai_crawlers(url)
-                    geo_citability = score_citability(soup)
-                    geo_llmstxt    = check_llmstxt(url)
-                    geo_eeat       = check_eeat(soup, url)
-                    geo_result     = calculate_geo_score(
-                        crawler_score    = geo_crawlers["score"],
-                        citability_score = geo_citability["score"],
-                        eeat_score       = geo_eeat["score"],
-                        llmstxt_exists   = geo_llmstxt["exists"],
-                        has_schema       = has_schema
-                    )
-
-                # ── GEO Score gauge ──────────────────────────────────────
-                geo_col1, geo_col2 = st.columns([2, 3])
-                with geo_col1:
-                    st.plotly_chart(
-                        create_score_gauge(geo_result["score"], title="GEO Score"),
-                        use_container_width=True
-                    )
-                    st.markdown(f"**Band:** {geo_result['band']}")
-
-                with geo_col2:
-                    st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:0 0 0.8rem;">Score Breakdown</div>', unsafe_allow_html=True)
-                    breakdown = geo_result["breakdown"]
-                    for key, data in breakdown.items():
-                        label = {"citability": "Content Citability", "eeat": "E-E-A-T",
-                                 "crawlers": "AI Crawler Access", "schema": "Schema Markup",
-                                 "llmstxt": "llms.txt"}.get(key, key)
-                        bar_pct = int(data["score"])
-                        st.markdown(f"**{label}** — {bar_pct}/100")
-                        st.progress(bar_pct / 100)
-
-                st.markdown("---")
-
-                # ── AI Crawler Access ────────────────────────────────────
-                geo_c1, geo_c2 = st.columns(2)
-
-                with geo_c1:
-                    st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:0 0 0.5rem;">AI Crawler Access</div>', unsafe_allow_html=True)
-                    st.caption(f"robots.txt score: **{geo_crawlers['score']}/100**")
-                    for crawler in geo_crawlers["crawlers"]:
-                        icon = "✅" if crawler["status"] == "allowed" else ("❌" if crawler["status"] == "blocked" else "⚠️")
-                        badge = "🔴" if crawler["priority"] == "critical" else "🟡"
-                        st.markdown(f"{icon} {badge} **{crawler['name']}** — {crawler['status']}")
-                    sitemap_icon = "✅" if geo_crawlers["has_sitemap"] else "❌"
-                    st.markdown(f"{sitemap_icon} Sitemap in robots.txt")
-
-                with geo_c2:
-                    st.markdown("#### 📄 llms.txt & E-E-A-T")
-
-                    # llms.txt
-                    if geo_llmstxt["exists"]:
-                        st.success(f"✅ llms.txt found — {geo_llmstxt['sections']} sections, {geo_llmstxt['links']} links")
-                    else:
-                        st.warning("❌ No llms.txt found — consider adding one to guide AI crawlers")
-                        st.markdown("[What is llms.txt?](https://llmstxt.org)")
-
-                    st.markdown("**E-E-A-T Signals**")
-                    signals = geo_eeat["signals"]
-                    eeat_items = [
-                        ("Author byline",    signals.get("has_author", False)),
-                        ("Publication date", signals.get("has_date", False)),
-                        ("About page",       signals.get("has_about", False)),
-                        ("Contact page",     signals.get("has_contact", False)),
-                        ("Privacy policy",   signals.get("has_privacy", False)),
-                        ("HTTPS",            signals.get("has_https", False)),
-                    ]
-                    for label, passed in eeat_items:
-                        st.markdown(status_indicator(passed, label), unsafe_allow_html=True)
-
-                st.markdown("---")
-
-                # ── Citability ───────────────────────────────────────────
-                st.markdown("#### ✍️ Content Citability")
-                st.caption("How likely AI models are to directly quote/cite content from this page")
-                cit_col1, cit_col2, cit_col3 = st.columns(3)
-                with cit_col1:
-                    st.metric("Citability Score", f"{geo_citability['score']}/100")
-                with cit_col2:
-                    st.metric("Grade", f"{geo_citability['grade']} — {geo_citability['grade_label']}")
-                with cit_col3:
-                    st.metric("Optimal Blocks", f"{geo_citability['optimal_blocks']} / {geo_citability['blocks_analyzed']}")
-
-                if geo_citability.get("top_blocks"):
-                    with st.expander("📋 Top Citable Content Blocks", expanded=False):
-                        for block in geo_citability["top_blocks"][:3]:
-                            st.markdown(f"**{block.get('heading', 'No heading')}** — Score: {block['score']}/100 ({block['grade']}) | {block['word_count']} words")
-                            st.caption(block.get("preview", ""))
-                            st.markdown("---")
-
-            # PageSpeed Section (if available)
-            if pagespeed_data:
-                st.markdown("---")
-                st.markdown("### ⚡ PageSpeed Insights (Mobile)")
-                
-                ps_cols = st.columns(4)
-                
-                with ps_cols[0]:
-                    perf_score = int(pagespeed_data.get("performance_score", 0) * 100)
-                    st.metric("Performance", f"{perf_score}/100")
-                
-                with ps_cols[1]:
-                    acc_score = int(pagespeed_data.get("accessibility_score", 0) * 100)
-                    st.metric("Accessibility", f"{acc_score}/100")
-                
-                with ps_cols[2]:
-                    bp_score = int(pagespeed_data.get("best_practices_score", 0) * 100)
-                    st.metric("Best Practices", f"{bp_score}/100")
-                
-                with ps_cols[3]:
-                    seo_score = int(pagespeed_data.get("seo_score", 0) * 100)
-                    st.metric("SEO", f"{seo_score}/100")
-                
-                st.markdown("**Core Web Vitals:**")
-                vital_cols = st.columns(5)
-                
-                with vital_cols[0]:
-                    st.text(f"FCP: {pagespeed_data.get('first_contentful_paint', 'N/A')}")
-                with vital_cols[1]:
-                    st.text(f"LCP: {pagespeed_data.get('largest_contentful_paint', 'N/A')}")
-                with vital_cols[2]:
-                    st.text(f"SI: {pagespeed_data.get('speed_index', 'N/A')}")
-                with vital_cols[3]:
-                    st.text(f"TBT: {pagespeed_data.get('total_blocking_time', 'N/A')}")
-                with vital_cols[4]:
-                    st.text(f"CLS: {pagespeed_data.get('cumulative_layout_shift', 'N/A')}")
-
-            # Comparison Section (if URL provided)
-            if compare_url:
-                st.markdown("---")
-                st.markdown("### 📊 Side-by-Side Comparison")
-                
-                try:
-                    comp_soup, _ = get_page_soup(compare_url)
-                    comp_title = get_title(comp_soup)
-                    comp_meta = get_meta_description(comp_soup)
-                    comp_h1 = get_h1_tags(comp_soup)
-                    comp_text = get_text_content(comp_soup)
-                    comp_wc = count_words(comp_text)
-                    comp_kc = count_keyword(comp_text, keyword)
-                    comp_kd = keyword_density(comp_text, keyword)
-                    comp_internal, comp_external = get_links(comp_soup, compare_url)
-                    comp_missing_alt = get_images_missing_alt(comp_soup)
-                    comp_tech = check_technical_seo(compare_url, comp_soup)
-                    comp_has_schema = has_schema_markup(comp_soup)
-                    
-                    comp_score, _ = calculate_seo_score(
-                        comp_title, comp_meta, comp_h1, comp_kc, comp_wc,
-                        len(comp_missing_alt),
-                        keyword_in_title(comp_title, keyword),
-                        keyword_in_meta(comp_meta, keyword),
-                        keyword_in_h1(comp_h1, keyword),
-                        title_length(comp_title),
-                        meta_description_length(comp_meta),
-                        len(comp_internal), len(comp_external),
-                        comp_has_schema,
-                        comp_tech.get('https_enabled', False),
-                        comp_tech.get('mobile_viewport', False)
-                    )
-                    
-                    comp_data = {
-                        "Metric": ["SEO Score", "Word Count", "Keyword Count", "Keyword Density", 
-                                  "Internal Links", "External Links", "Missing ALT"],
-                        "Primary Venue": [score, wc, kc, f"{kd}%", len(internal), len(external), len(missing_alt)],
-                        "Comparison Venue": [comp_score, comp_wc, comp_kc, f"{comp_kd}%", 
-                                           len(comp_internal), len(comp_external), len(comp_missing_alt)],
-                        "Winner": [
-                            compare_metric(score, comp_score),
-                            compare_metric(wc, comp_wc),
-                            compare_metric(kc, comp_kc),
-                            compare_metric(kd, comp_kd),
-                            compare_metric(len(internal), len(comp_internal)),
-                            compare_metric(len(external), len(comp_external)),
-                            compare_metric(len(missing_alt), len(comp_missing_alt), higher_is_better=False)
-                        ]
-                    }
-                    
-                    st.dataframe(pd.DataFrame(comp_data), use_container_width=True)
-                    
-                except Exception as e:
-                    st.error(f"Error analyzing comparison URL: {e}")
-
-            # Multi-Venue Leaderboard
-            if venue_urls_text.strip():
-                st.markdown("---")
-                st.markdown("### 🏆 Multi-Venue Leaderboard")
-                
-                venue_urls = [u.strip() for u in venue_urls_text.strip().split("\n") if u.strip()]
-                
-                if venue_urls:
-                    leaderboard_progress = st.progress(0)
-                    leaderboard_rows = []
-                    
-                    for idx, venue_url in enumerate(venue_urls):
-                        try:
-                            leaderboard_progress.progress((idx + 1) / len(venue_urls))
-                            venue_data = analyze_venue(venue_url, keyword)
-                            leaderboard_rows.append(venue_data)
-                        except Exception:
-                            st.warning(f"Could not analyze: {venue_url}")
-                    
-                    leaderboard_progress.empty()
-                    
-                    if leaderboard_rows:
-                        leaderboard_df = pd.DataFrame(leaderboard_rows)
-                        leaderboard_df = leaderboard_df.sort_values(by="SEO Score", ascending=False)
-                        
-                        st.dataframe(leaderboard_df, use_container_width=True)
-                        
-                        chart = px.bar(
-                            leaderboard_df.reset_index(),
-                            x="Venue Name",
-                            y="SEO Score",
-                            color="Score Band",
-                            text="SEO Score",
-                            title="Venue SEO Score Comparison"
-                        )
-                        
-                        st.plotly_chart(chart, use_container_width=True)
+            _render_seo_results(st.session_state.seo_data)
 
         except Exception as e:
             st.error(f"❌ Analysis Error: {e}")
             st.info("Please check the URL is valid and accessible.")
     else:
         st.warning("⚠️ Please enter both URL and keyword to analyze.")
+
 
 # ==================== COMPETITORS SECTION ====================
 
@@ -2100,159 +2271,8 @@ if competitors_clicked:
             )
             st.session_state.results_view = "comp"
 
-            # ── Step 4: Display score comparison ────────────────────────────
-            benchmark_df = pd.DataFrame(benchmark_rows)
-
-            # Separate blocked from valid results
-            error_rows = [r for r in benchmark_rows if r.get("Score Band") == "Blocked"]
-            valid_rows = [r for r in benchmark_rows if r.get("Score Band") != "Blocked"]
-
-            if error_rows:
-                blocked = [r["Venue Name"] for r in error_rows]
-                st.warning(f"⚠️ {len(error_rows)} site(s) blocked automated access (common for large corporate sites): {', '.join(blocked)}")
-
-            primary_row = next((r for r in valid_rows if "Primary" in r.get("Role", "")), None)
-
-            if not primary_row:
-                st.error(f"❌ Could not fetch **{url}** — the site blocks automated requests. Try a different URL that doesn't block bots.")
-                # Still show competitors if we have them
-                valid_comp_rows = [r for r in valid_rows if "Competitor" in r.get("Role", "")]
-                if valid_comp_rows:
-                    st.markdown("### 📊 Competitor Scores (primary site unavailable)")
-
-            # Score bar chart — primary + top 10 competitors by score
-            if valid_rows:
-                primary_valid = [r for r in valid_rows if "Primary" in r.get("Role", "")]
-                comp_valid = sorted(
-                    [r for r in valid_rows if "Competitor" in r.get("Role", "")],
-                    key=lambda x: x.get("SEO Score", 0), reverse=True
-                )[:10]
-                chart_rows = primary_valid + comp_valid
-                valid_df = pd.DataFrame(chart_rows)
-                # Short label: domain only
-                from urllib.parse import urlparse as _up
-                valid_df["Label"] = valid_df["URL"].apply(
-                    lambda u: _up(u).netloc.replace("www.", "") if u else ""
-                )
-                # Sort by score ascending so highest is at top of horizontal chart
-                valid_df = valid_df.sort_values("SEO Score", ascending=True)
-                fig = px.bar(
-                    valid_df,
-                    x="SEO Score",
-                    y="Label",
-                    color="Role",
-                    text="SEO Score",
-                    orientation="h",
-                    color_discrete_map={"🏠 Primary Venue": "#B02025", "🎯 Competitor": "#555555"},
-                    title=f"SEO Score vs Competitors — '{keyword}'"
-                )
-                fig.update_traces(textposition="outside", textfont_size=11,
-                                  marker_line_width=0)
-                chart_height = max(380, len(chart_rows) * 38)
-                fig.update_layout(
-                    height=chart_height,
-                    showlegend=True,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(color="rgba(255,255,255,0.7)", family="Outfit"),
-                    title_font=dict(size=13, color="rgba(255,255,255,0.5)"),
-                    xaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False),
-                    yaxis=dict(gridcolor="rgba(0,0,0,0)"),
-                    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
-                    margin=dict(l=10, r=60, t=40, b=20),
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-            # Summary metrics
-            if primary_row:
-                best_comp = max(
-                    [r for r in valid_rows if "Competitor" in r.get("Role", "")],
-                    key=lambda x: x.get("SEO Score", 0),
-                    default={}
-                )
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Your SEO Score", primary_row.get("SEO Score", 0))
-                m2.metric("Best Competitor Score", best_comp.get("SEO Score", "N/A") if best_comp else "N/A")
-                if best_comp:
-                    gap = primary_row.get("SEO Score", 0) - best_comp.get("SEO Score", 0)
-                    m3.metric("Gap vs Best", f"{gap:+d}", delta_color="normal")
-                all_comps = [r for r in benchmark_rows if "Competitor" in r.get("Role","")]
-                m4.metric("Competitors Analysed", len(all_comps))
-
-            # Full data table — all rows including errors
-            st.markdown("""<div style="font-size:0.6rem;font-weight:800;color:#B02025;
-                letter-spacing:0.18em;text-transform:uppercase;margin:1.5rem 0 0.5rem;">
-                Full Comparison — All Venues</div>""", unsafe_allow_html=True)
-            display_cols = ["Role", "Venue Name", "SEO Score", "Score Band", "Word Count", "HTTPS", "Schema"]
-            available_cols = [c for c in display_cols if c in benchmark_df.columns]
-            st.dataframe(benchmark_df[available_cols], use_container_width=True)
-
-            # ── Step 5: AI Executive Summary ────────────────────────────────
-            if primary_row and gemini_api_key:
-                st.markdown("""
-<div style="font-size:0.6rem;font-weight:800;color:#B02025;letter-spacing:0.18em;
-            text-transform:uppercase;margin:2rem 0 0.8rem;">AI Executive Report</div>
-""", unsafe_allow_html=True)
-                best_comp_name = best_comp.get("Venue Name", "top competitor") if best_comp else "N/A"
-
-                insights = generate_strategic_insights(
-                    primary_row=primary_row,
-                    benchmark_rows=benchmark_rows,
-                    keyword=keyword
-                )
-
-                with st.spinner("Generating AI analysis report..."):
-                    ai_summary = generate_ai_executive_summary(
-                        gemini_api_key=gemini_api_key,
-                        primary_name=primary_row.get("Venue Name", url),
-                        keyword=keyword,
-                        primary_rank="N/A",
-                        primary_score=primary_row.get("SEO Score", 0),
-                        top_competitor=best_comp_name,
-                        strategic_insights=insights,
-                        recommended_fixes=[],
-                        benchmark_rows=benchmark_rows,
-                    )
-                if ai_summary:
-                    # Parse sections and render as styled cards
-                    import re as _re
-                    section_colors = {
-                        "executive summary": "#7EC7A3",
-                        "strengths": "#4CAF50",
-                        "weaknesses": "#FF5252",
-                        "keyword": "#FF9800",
-                        "technical": "#B02025",
-                        "competitor": "#667eea",
-                        "priority": "#FFD600",
-                        "conclusion": "#7EC7A3",
-                    }
-                    sections = _re.split(r'\n#{1,3}\s+', "\n" + ai_summary)
-                    for sec in sections:
-                        if not sec.strip():
-                            continue
-                        lines = sec.strip().split("\n", 1)
-                        title = lines[0].strip().lstrip("#").strip()
-                        body = lines[1].strip() if len(lines) > 1 else ""
-                        color = "#B02025"
-                        for k, v in section_colors.items():
-                            if k in title.lower():
-                                color = v
-                                break
-                        # Convert markdown bold/bullets to HTML
-                        body_html = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                        body_html = _re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:rgba(255,255,255,0.9);">\1</strong>', body_html)
-                        body_html = _re.sub(r'^\s*[-•]\s+', '<li>', body_html, flags=_re.MULTILINE)
-                        body_html = _re.sub(r'^\s*\d+\.\s+', '<li style="margin-bottom:0.4rem">', body_html, flags=_re.MULTILINE)
-                        body_html = body_html.replace("\n", "<br>")
-                        st.markdown(f"""
-<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.06);
-            border-left:3px solid {color};border-radius:12px;
-            padding:1.4rem 1.8rem;margin-bottom:1rem;">
-    <div style="font-size:0.7rem;font-weight:800;letter-spacing:0.14em;
-                text-transform:uppercase;color:{color};margin-bottom:0.8rem;">{title}</div>
-    <div style="font-size:0.88rem;color:rgba(255,255,255,0.65);line-height:1.75;">{body_html}</div>
-</div>
-""", unsafe_allow_html=True)
+            # ── Step 4: Display results ─────────────────────────────────
+            _render_comp_results(st.session_state.comp_data)
 
         except Exception as e:
             st.error(f"❌ Competitor analysis error: {e}")
@@ -2295,3 +2315,10 @@ if _has_seo or _has_comp:
             st.rerun()
 
     st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:1rem 0;'>", unsafe_allow_html=True)
+
+# Render stored results when toggle is used (no new analysis running)
+if not analyze_clicked and not competitors_clicked:
+    if st.session_state.results_view == "seo" and st.session_state.seo_data:
+        _render_seo_results(st.session_state.seo_data)
+    elif st.session_state.results_view == "comp" and st.session_state.comp_data:
+        _render_comp_results(st.session_state.comp_data)
