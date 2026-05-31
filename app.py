@@ -47,48 +47,70 @@ except (KeyError, FileNotFoundError, AttributeError):
     except:
         pass
 
-# ==================== IP-BASED RATE LIMITING ====================
-IP_LIMIT = 2
-_IP_STORE = os.path.join(os.path.dirname(__file__), "ip_counts.json")
+# ==================== GLOBAL MONTHLY RATE LIMITING (Upstash Redis) ====================
+MONTHLY_LIMIT = 50
 
-def _get_client_ip():
+# Load Upstash credentials from secrets
+_upstash_url = ""
+_upstash_token = ""
+try:
+    _upstash_url   = st.secrets["UPSTASH_REDIS_REST_URL"]
+    _upstash_token = st.secrets["UPSTASH_REDIS_REST_TOKEN"]
+except Exception:
+    pass
+
+def _redis_key():
+    from datetime import datetime
+    now = datetime.utcnow()
+    return f"monthly_uses:{now.year}-{now.month:02d}"
+
+def _redis_get(key):
+    if not _upstash_url or not _upstash_token:
+        return 0
     try:
-        headers = st.context.headers
-        ip = headers.get("X-Forwarded-For", headers.get("X-Real-IP", "local"))
-        return ip.split(",")[0].strip()
+        import requests as _r
+        resp = _r.get(
+            f"{_upstash_url}/get/{key}",
+            headers={"Authorization": f"Bearer {_upstash_token}"},
+            timeout=5
+        )
+        val = resp.json().get("result")
+        return int(val) if val else 0
     except Exception:
-        return "local"
+        return 0  # fail open — don't block users if Redis is down
 
-def _hash_ip(ip):
-    return hashlib.sha256(ip.encode()).hexdigest()[:16]
-
-def _load_ip_counts():
-    if os.path.exists(_IP_STORE):
-        try:
-            with open(_IP_STORE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-def _save_ip_counts(counts):
+def _redis_incr(key):
+    if not _upstash_url or not _upstash_token:
+        return 1
     try:
-        with open(_IP_STORE, "w") as f:
-            json.dump(counts, f)
+        import requests as _r
+        from datetime import datetime, date
+        import calendar
+        # INCR the key
+        resp = _r.get(
+            f"{_upstash_url}/incr/{key}",
+            headers={"Authorization": f"Bearer {_upstash_token}"},
+            timeout=5
+        )
+        new_val = int(resp.json().get("result", 1))
+        # Set TTL to end of current month (only needed on first write)
+        now = datetime.utcnow()
+        days_in_month = calendar.monthrange(now.year, now.month)[1]
+        seconds_left = (days_in_month - now.day) * 86400 + (86400 - now.hour * 3600 - now.minute * 60 - now.second)
+        _r.get(
+            f"{_upstash_url}/expire/{key}/{seconds_left}",
+            headers={"Authorization": f"Bearer {_upstash_token}"},
+            timeout=5
+        )
+        return new_val
     except Exception:
-        pass
+        return 1  # fail open
 
-def _get_ip_uses(ip_hash):
-    return _load_ip_counts().get(ip_hash, 0)
+def _get_monthly_uses():
+    return _redis_get(_redis_key())
 
-def _increment_ip_uses(ip_hash):
-    counts = _load_ip_counts()
-    counts[ip_hash] = counts.get(ip_hash, 0) + 1
-    _save_ip_counts(counts)
-    return counts[ip_hash]
-
-_client_ip = _get_client_ip()
-_ip_hash = _hash_ip(_client_ip)
+def _increment_monthly_uses():
+    return _redis_incr(_redis_key())
 
 # ==================== ADMIN MODE ====================
 _admin_password = ""
@@ -138,8 +160,8 @@ def _check_limit():
     """Return (allowed, remaining). Admins and own-key users always allowed."""
     if st.session_state.is_admin or _using_own_keys():
         return True, 999
-    used = _get_ip_uses(_ip_hash)
-    remaining = max(0, IP_LIMIT - used)
+    used = _get_monthly_uses()
+    remaining = max(0, MONTHLY_LIMIT - used)
     return remaining > 0, remaining
 
 # Active keys for this session
@@ -2024,10 +2046,10 @@ def _render_badge(placeholder):
         badge_text = '<strong style="color:#7EC7A3;">Unlimited</strong>'
         dot_color = "#7EC7A3"
     else:
-        used = _get_ip_uses(_ip_hash)
-        rem = max(0, IP_LIMIT - used)
-        bar_color = "#00C853" if rem == IP_LIMIT else "#FFA726" if rem > 0 else "#EF5350"
-        badge_text = f'<strong style="color:{bar_color}">{rem}</strong> / {IP_LIMIT} tries left'
+        used = _get_monthly_uses()
+        rem = max(0, MONTHLY_LIMIT - used)
+        bar_color = "#00C853" if rem > 10 else "#FFA726" if rem > 0 else "#EF5350"
+        badge_text = f'<strong style="color:{bar_color}">{rem}</strong> / {MONTHLY_LIMIT} tries left this month'
         dot_color = bar_color
     placeholder.markdown(f"""
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
@@ -2179,7 +2201,7 @@ if analyze_clicked:
     <div style="font-size:0.75rem;font-weight:800;color:#FF5252;letter-spacing:0.1em;
                 text-transform:uppercase;margin-bottom:0.4rem;">Free Try Limit Reached</div>
     <div style="font-size:0.88rem;color:rgba(255,255,255,0.6);">
-        You've used your <strong>2 complimentary analyses</strong> from this IP address.<br>
+        The <strong>50 free analyses</strong> for this month have been used up.<br>
         Click <strong style="color:#7EC7A3;">+ USE YOUR OWN API KEYS</strong> above to continue with unlimited access using your own free API keys.
     </div>
 </div>""", unsafe_allow_html=True)
@@ -2320,7 +2342,7 @@ if analyze_clicked:
 
             # Increment IP usage counter
             if not _using_own_keys():
-                _increment_ip_uses(_ip_hash)
+                _increment_monthly_uses()
             _render_badge(_badge_placeholder)
             # Store all SEO results in session state for persistent display
             st.session_state.seo_data = dict(
@@ -2358,7 +2380,7 @@ if competitors_clicked:
     <div style="font-size:0.75rem;font-weight:800;color:#FF5252;letter-spacing:0.1em;
                 text-transform:uppercase;margin-bottom:0.4rem;">Free Try Limit Reached</div>
     <div style="font-size:0.88rem;color:rgba(255,255,255,0.6);">
-        You've used your <strong>2 complimentary analyses</strong> from this IP address.<br>
+        The <strong>50 free analyses</strong> for this month have been used up.<br>
         Click <strong style="color:#7EC7A3;">+ USE YOUR OWN API KEYS</strong> above to continue with unlimited access.
     </div>
 </div>""", unsafe_allow_html=True)
