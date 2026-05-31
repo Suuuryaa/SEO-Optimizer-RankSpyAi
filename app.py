@@ -559,7 +559,7 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
 .ticker-track {
     display: flex; gap: 0;
     width: max-content;
-    animation: marquee 28s linear infinite;
+    animation: marquee 60s linear infinite;
     white-space: nowrap;
 }
 .ticker-item {
