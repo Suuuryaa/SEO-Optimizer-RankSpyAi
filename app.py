@@ -47,8 +47,8 @@ except (KeyError, FileNotFoundError, AttributeError):
     except:
         pass
 
-# ==================== GLOBAL MONTHLY RATE LIMITING (Upstash Redis) ====================
-MONTHLY_LIMIT = 50
+# ==================== PER-IP RATE LIMITING (Upstash Redis) ====================
+IP_LIMIT = 4
 
 # Load Upstash credentials from secrets
 _upstash_url = ""
@@ -59,10 +59,16 @@ try:
 except Exception:
     pass
 
-def _redis_key():
-    from datetime import datetime
-    now = datetime.utcnow()
-    return f"monthly_uses:{now.year}-{now.month:02d}"
+def _get_client_ip():
+    try:
+        headers = st.context.headers
+        ip = headers.get("X-Forwarded-For", headers.get("X-Real-IP", "local"))
+        return ip.split(",")[0].strip()
+    except Exception:
+        return "local"
+
+def _hash_ip(ip):
+    return hashlib.sha256(ip.encode()).hexdigest()[:16]
 
 def _redis_get(key):
     if not _upstash_url or not _upstash_token:
@@ -77,40 +83,30 @@ def _redis_get(key):
         val = resp.json().get("result")
         return int(val) if val else 0
     except Exception:
-        return 0  # fail open — don't block users if Redis is down
+        return 0  # fail open
 
 def _redis_incr(key):
     if not _upstash_url or not _upstash_token:
         return 1
     try:
         import requests as _r
-        from datetime import datetime, date
-        import calendar
-        # INCR the key
         resp = _r.get(
             f"{_upstash_url}/incr/{key}",
             headers={"Authorization": f"Bearer {_upstash_token}"},
             timeout=5
         )
-        new_val = int(resp.json().get("result", 1))
-        # Set TTL to end of current month (only needed on first write)
-        now = datetime.utcnow()
-        days_in_month = calendar.monthrange(now.year, now.month)[1]
-        seconds_left = (days_in_month - now.day) * 86400 + (86400 - now.hour * 3600 - now.minute * 60 - now.second)
-        _r.get(
-            f"{_upstash_url}/expire/{key}/{seconds_left}",
-            headers={"Authorization": f"Bearer {_upstash_token}"},
-            timeout=5
-        )
-        return new_val
+        return int(resp.json().get("result", 1))
     except Exception:
         return 1  # fail open
 
-def _get_monthly_uses():
-    return _redis_get(_redis_key())
+_client_ip = _get_client_ip()
+_ip_hash = _hash_ip(_client_ip)
 
-def _increment_monthly_uses():
-    return _redis_incr(_redis_key())
+def _get_ip_uses():
+    return _redis_get(f"ip:{_ip_hash}")
+
+def _increment_ip_uses():
+    return _redis_incr(f"ip:{_ip_hash}")
 
 # ==================== ADMIN MODE ====================
 _admin_password = ""
@@ -157,8 +153,12 @@ def _active_keys():
     return (_default_serper, _default_gemini, _default_pagespeed, "")
 
 def _check_limit():
-    """Return (allowed, remaining). Always allowed — limits handled by API quota."""
-    return True, 999
+    """Return (allowed, remaining). Admins and own-key users always allowed."""
+    if st.session_state.is_admin or _using_own_keys():
+        return True, 999
+    used = _get_ip_uses()
+    remaining = max(0, IP_LIMIT - used)
+    return remaining > 0, remaining
 
 # Active keys for this session
 serp_key, gemini_api_key, pagespeed_api_key, _scraperapi_key = _active_keys()
@@ -2042,8 +2042,11 @@ def _render_badge(placeholder):
         badge_text = '<strong style="color:#7EC7A3;">Unlimited</strong>'
         dot_color = "#7EC7A3"
     else:
-        badge_text = '<strong style="color:#00C853;">Free</strong>'
-        dot_color = "#00C853"
+        used = _get_ip_uses()
+        rem = max(0, IP_LIMIT - used)
+        bar_color = "#00C853" if rem == IP_LIMIT else "#FFA726" if rem > 0 else "#EF5350"
+        badge_text = f'<strong style="color:{bar_color}">{rem}</strong> / {IP_LIMIT} free tries left'
+        dot_color = bar_color
     placeholder.markdown(f"""
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
     <span style="font-size:0.65rem;font-weight:800;color:#B02025;letter-spacing:0.18em;text-transform:uppercase;">🔍 Analysis Setup</span>
@@ -2194,7 +2197,7 @@ if analyze_clicked:
     <div style="font-size:0.75rem;font-weight:800;color:#FF5252;letter-spacing:0.1em;
                 text-transform:uppercase;margin-bottom:0.4rem;">Free Try Limit Reached</div>
     <div style="font-size:0.88rem;color:rgba(255,255,255,0.6);">
-        The <strong>50 free analyses</strong> for this month have been used up.<br>
+        You've used all <strong>4 free analyses</strong> from your IP address.<br>
         Click <strong style="color:#7EC7A3;">+ USE YOUR OWN API KEYS</strong> above to continue with unlimited access using your own free API keys.
     </div>
 </div>""", unsafe_allow_html=True)
@@ -2335,7 +2338,7 @@ if analyze_clicked:
 
             # Increment IP usage counter
             if not _using_own_keys():
-                _increment_monthly_uses()
+                _increment_ip_uses()
             _render_badge(_badge_placeholder)
             # Store all SEO results in session state for persistent display
             st.session_state.seo_data = dict(
@@ -2373,7 +2376,7 @@ if competitors_clicked:
     <div style="font-size:0.75rem;font-weight:800;color:#FF5252;letter-spacing:0.1em;
                 text-transform:uppercase;margin-bottom:0.4rem;">Free Try Limit Reached</div>
     <div style="font-size:0.88rem;color:rgba(255,255,255,0.6);">
-        The <strong>50 free analyses</strong> for this month have been used up.<br>
+        You've used all <strong>4 free analyses</strong> from your IP address.<br>
         Click <strong style="color:#7EC7A3;">+ USE YOUR OWN API KEYS</strong> above to continue with unlimited access.
     </div>
 </div>""", unsafe_allow_html=True)
