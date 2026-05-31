@@ -711,37 +711,54 @@ table{{font-size:0.85rem;}} th,td{{padding:6px 10px;text-align:left;}}
             "Twitter Card": tech_seo.get('has_twitter_card', False),
             "Schema Markup": has_schema,
         }
-        t_labels = list(tech_factors.keys())
-        t_bools = list(tech_factors.values())
-        t_vals = [100 if v else 15 for v in t_bools]
-        t_display = ["✓  Pass" if v else "✗  Fail" for v in t_bools]
-        t_colors = ["#00C853" if v else "#EF5350" for v in t_bools]
-        st.plotly_chart(create_horizontal_bar(t_labels, t_vals, t_colors, "Technical SEO Audit", display_labels=t_display), use_container_width=True)
+        # Pass/fail tile grid — 3 per row
+        _tech_checks = [
+            ("HTTPS", tech_seo.get('https_enabled', False)),
+            ("Canonical URL", tech_seo.get('has_canonical', False)),
+            ("Indexable", not tech_seo.get('robots_noindex', True)),
+            ("Mobile Viewport", tech_seo.get('mobile_viewport', False)),
+            ("Language Tag", tech_seo.get('has_lang', False)),
+            ("Single H1", tech_seo.get('proper_h1_usage', False)),
+            ("Open Graph", tech_seo.get('has_og_title', False)),
+            ("Twitter Card", tech_seo.get('has_twitter_card', False)),
+            ("Schema Markup", has_schema),
+        ]
+        _pass_count = sum(1 for _, v in _tech_checks if v)
+        st.markdown(
+            f'<div style="font-size:0.75rem;color:rgba(255,255,255,0.4);margin-bottom:1rem;">'
+            f'<span style="color:#00C853;font-weight:700;">{_pass_count} passed</span>'
+            f'  ·  '
+            f'<span style="color:#EF5350;font-weight:700;">{len(_tech_checks)-_pass_count} failed</span>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+        _tile_cols = st.columns(3)
+        for i, (name, passed) in enumerate(_tech_checks):
+            _color = "#00C853" if passed else "#EF5350"
+            _bg = "rgba(0,200,83,0.06)" if passed else "rgba(239,83,80,0.06)"
+            _icon = "✓" if passed else "✗"
+            _label = "PASS" if passed else "FAIL"
+            _tile_cols[i % 3].markdown(
+                f'<div style="background:{_bg};border:1px solid {_color}22;'
+                f'border-top:2px solid {_color};border-radius:10px;'
+                f'padding:1rem 1.1rem;margin-bottom:0.7rem;text-align:center;">'
+                f'<div style="font-size:1.6rem;font-weight:900;color:{_color};line-height:1;">{_icon}</div>'
+                f'<div style="font-size:0.72rem;font-weight:700;color:rgba(255,255,255,0.75);'
+                f'margin:0.4rem 0 0.2rem;letter-spacing:0.02em;">{name}</div>'
+                f'<div style="font-size:0.55rem;font-weight:800;letter-spacing:0.14em;'
+                f'text-transform:uppercase;color:{_color};opacity:0.8;">{_label}</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
 
-        tech_col1, tech_col2 = st.columns(2)
-
-        with tech_col1:
-            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Security & Protocol</div>', unsafe_allow_html=True)
-            st.markdown(status_indicator(tech_seo.get('https_enabled', False), "HTTPS Enabled"), unsafe_allow_html=True)
-            st.markdown(status_indicator(tech_seo.get('has_canonical', False), "Canonical URL"), unsafe_allow_html=True)
-            st.markdown(status_indicator(not tech_seo.get('robots_noindex', True), "Indexable (No noindex)"), unsafe_allow_html=True)
-
-            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Structured Data</div>', unsafe_allow_html=True)
-            st.markdown(status_indicator(has_schema, "Schema Markup"), unsafe_allow_html=True)
-            if has_schema:
-                schemas = detect_schema_markup(soup)
-                if schemas['json_ld']:
-                    st.info(f"**JSON-LD Types:** {', '.join(schemas['json_ld'])}")
-
-        with tech_col2:
-            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Mobile & Accessibility</div>', unsafe_allow_html=True)
-            st.markdown(status_indicator(tech_seo.get('mobile_viewport', False), "Mobile Viewport"), unsafe_allow_html=True)
-            st.markdown(status_indicator(tech_seo.get('has_lang', False), "Language Attribute"), unsafe_allow_html=True)
-            st.markdown(status_indicator(tech_seo.get('proper_h1_usage', False), "Single H1 Tag"), unsafe_allow_html=True)
-
-            st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:1rem 0 0.5rem;">Social Media</div>', unsafe_allow_html=True)
-            st.markdown(status_indicator(tech_seo.get('has_og_title', False), "Open Graph Title"), unsafe_allow_html=True)
-            st.markdown(status_indicator(tech_seo.get('has_twitter_card', False), "Twitter Card"), unsafe_allow_html=True)
+        if has_schema:
+            schemas = detect_schema_markup(soup)
+            if schemas['json_ld']:
+                st.markdown(
+                    f'<div style="font-size:0.78rem;color:rgba(255,255,255,0.45);margin-top:0.3rem;">'
+                    f'JSON-LD Types: <span style="color:#00C853;">{", ".join(schemas["json_ld"])}</span></div>',
+                    unsafe_allow_html=True
+                )
 
         # PageSpeed Section
         if pagespeed_data:
