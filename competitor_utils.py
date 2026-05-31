@@ -267,6 +267,7 @@ RULES:
 - Prefer local/country-specific domains (e.g. nz.tommy.com, hm.com/en_nz) over generic global ones
 - EXCLUDE: Reddit, Quora, Wikipedia, YouTube, news sites, directories (Yelp, TripAdvisor), social media, job boards, analyst sites
 - EXCLUDE: the business itself
+- EXCLUDE: brands that do not actively sell in the target country/market (e.g. UK-only brands for a NZ business)
 
 EXAMPLES of good competitors for calvinklein.co.nz: Tommy Hilfiger NZ, H&M NZ, Hallensteins, Glassons, Bonds NZ, Kathmandu, Country Road, etc.
 
