@@ -2443,6 +2443,7 @@ if competitors_clicked:
                     gemini_competitors = []
 
             if not gemini_competitors:
+                st.error("❌ No competitors identified. Please try again or check your API key.")
                 st.stop()
 
             # Deduplicate by domain (keep first occurrence)
@@ -2554,8 +2555,10 @@ if competitors_clicked:
         except Exception as e:
             st.error(f"❌ Competitor analysis error: {e}")
 
-# Render stored results when toggle is used (no new analysis running)
-if not analyze_clicked and not competitors_clicked:
+# Render stored results when toggle is used, or when a new run failed (no new data stored)
+_just_ran_seo = analyze_clicked and st.session_state.seo_data
+_just_ran_comp = competitors_clicked and st.session_state.comp_data and st.session_state.results_view == "comp"
+if not _just_ran_seo and not _just_ran_comp and not analyze_clicked:
     if st.session_state.results_view == "seo" and st.session_state.seo_data:
         _render_seo_results(st.session_state.seo_data)
     elif st.session_state.results_view == "comp" and st.session_state.comp_data:
