@@ -981,11 +981,16 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Tiny fixed button — rendered via a hidden column trick
+# Tiny corner button — one button, toggles between 🔒 and 🔓
 _acol1, _acol2 = st.columns([20, 1])
 with _acol2:
-    if st.button("🔒", key="admin_btn", help="Admin"):
-        st.session_state.show_admin_login = not st.session_state.show_admin_login
+    _btn_icon = "🔓" if st.session_state.is_admin else "🔒"
+    if st.button(_btn_icon, key="admin_btn", help="Admin"):
+        if st.session_state.is_admin:
+            st.session_state.is_admin = False
+            st.rerun()
+        else:
+            st.session_state.show_admin_login = not st.session_state.show_admin_login
 
 if st.session_state.show_admin_login and not st.session_state.is_admin:
     with st.container():
@@ -1004,13 +1009,6 @@ if st.session_state.show_admin_login and not st.session_state.is_admin:
             else:
                 st.markdown('<div style="font-size:0.75rem;color:#FF5252;">Incorrect password.</div>', unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-
-if st.session_state.is_admin:
-    _acol_a, _acol_b = st.columns([20, 1])
-    with _acol_b:
-        if st.button("🔓", key="admin_logout_btn", help="Logout admin"):
-            st.session_state.is_admin = False
-            st.rerun()
 
 # ==================== INPUT SECTION ====================
 
