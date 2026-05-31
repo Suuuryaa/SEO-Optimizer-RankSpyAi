@@ -732,7 +732,8 @@ table{{font-size:0.85rem;}} th,td{{padding:6px 10px;text-align:left;}}
             f'</div>',
             unsafe_allow_html=True
         )
-        _tile_cols = st.columns(3)
+        st.markdown("<div style='margin-top:0.5rem;'></div>", unsafe_allow_html=True)
+        _tile_cols = st.columns([1, 1, 1], gap="medium")
         for i, (name, passed) in enumerate(_tech_checks):
             _color = "#00C853" if passed else "#EF5350"
             _bg = "rgba(0,200,83,0.06)" if passed else "rgba(239,83,80,0.06)"
@@ -741,12 +742,12 @@ table{{font-size:0.85rem;}} th,td{{padding:6px 10px;text-align:left;}}
             _tile_cols[i % 3].markdown(
                 f'<div style="background:{_bg};border:1px solid {_color}22;'
                 f'border-top:2px solid {_color};border-radius:10px;'
-                f'padding:1rem 1.1rem;margin-bottom:0.7rem;text-align:center;">'
-                f'<div style="font-size:1.6rem;font-weight:900;color:{_color};line-height:1;">{_icon}</div>'
-                f'<div style="font-size:0.72rem;font-weight:700;color:rgba(255,255,255,0.75);'
-                f'margin:0.4rem 0 0.2rem;letter-spacing:0.02em;">{name}</div>'
-                f'<div style="font-size:0.55rem;font-weight:800;letter-spacing:0.14em;'
-                f'text-transform:uppercase;color:{_color};opacity:0.8;">{_label}</div>'
+                f'padding:1.6rem 1.4rem;margin-bottom:1.2rem;text-align:center;">'
+                f'<div style="font-size:2rem;font-weight:900;color:{_color};line-height:1;margin-bottom:0.6rem;">{_icon}</div>'
+                f'<div style="font-size:0.78rem;font-weight:700;color:rgba(255,255,255,0.8);'
+                f'margin:0 0 0.4rem;letter-spacing:0.02em;">{name}</div>'
+                f'<div style="font-size:0.58rem;font-weight:800;letter-spacing:0.16em;'
+                f'text-transform:uppercase;color:{_color};opacity:0.85;">{_label}</div>'
                 f'</div>',
                 unsafe_allow_html=True
             )
