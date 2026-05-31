@@ -1274,6 +1274,7 @@ if competitors_clicked:
             benchmark_rows = []
             progress = st.progress(0)
             total = len(gemini_competitors) + 1
+            st.info("⏳ **Please be patient** — the analysis is running in the background fetching and scoring each competitor. It may look stuck but it's working hard. This typically takes **2–4 minutes** depending on the number of competitors.")
 
             with st.spinner("Analyzing primary venue..."):
                 try:
