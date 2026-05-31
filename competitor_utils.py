@@ -304,9 +304,15 @@ TARGET KEYWORD: "{keyword}"
 {serp_section}
 {intent_note}
 
-STEP 1 — Understand the business:
-Look at {domain} and determine: what industry/category is this business in? What does it sell or offer?
-Use this to anchor your competitor search — only return brands in the SAME industry.
+STEP 1 — Deeply understand the business from its URL:
+Analyse {domain} carefully:
+- What brand is this? (e.g. calvinklein.co.nz = Calvin Klein, a global luxury fashion brand)
+- What industry/category? (e.g. fashion, SaaS, hospitality, legal services)
+- What country/market does this domain serve? (e.g. .co.nz = New Zealand)
+- What does the TARGET KEYWORD "{keyword}" mean IN THE CONTEXT of this business?
+  (e.g. "off" on a fashion site = discounts/sales, not the word "off"; "cloud" on a tech site = cloud software, not weather)
+
+Use this full understanding to anchor your search — only return brands operating in the SAME industry, serving the SAME market.
 
 STEP 2 — A site qualifies as a DIRECT COMPETITOR only if ALL of these are true:
 ✓ It is a real company with its own website (not a platform, directory, or aggregator)
