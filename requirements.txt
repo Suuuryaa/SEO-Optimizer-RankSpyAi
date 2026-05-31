@@ -8,4 +8,6 @@ lxml>=6.1.0
 python-dotenv>=1.0.0
 tenacity>=8.2.3
 textstat>=0.7.3
-scrapling[fetchers]>=0.4.8
+scrapling>=0.4.8
+curl-cffi>=0.7.0
+browserforge>=1.2.4
