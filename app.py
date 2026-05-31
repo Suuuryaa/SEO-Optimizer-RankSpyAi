@@ -893,11 +893,11 @@ st.markdown("""
 
 # ==================== INPUT SECTION ====================
 
-remaining = DAILY_LIMIT - st.session_state.daily_uses
-pct = remaining / DAILY_LIMIT
-bar_color = "#00C853" if pct > 0.5 else "#FFA726" if pct > 0.2 else "#EF5350"
-
-st.markdown(f"""
+def _render_badge(placeholder):
+    remaining = DAILY_LIMIT - st.session_state.daily_uses
+    pct = remaining / DAILY_LIMIT
+    bar_color = "#00C853" if pct > 0.5 else "#FFA726" if pct > 0.2 else "#EF5350"
+    placeholder.markdown(f"""
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
     <span style="font-size:0.65rem;font-weight:800;color:#B02025;letter-spacing:0.18em;text-transform:uppercase;">🔍 Analysis Setup</span>
     <div class="demo-badge">
@@ -906,6 +906,9 @@ st.markdown(f"""
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+_badge_placeholder = st.empty()
+_render_badge(_badge_placeholder)
 
 url = st.text_input("🌐 Website URL", placeholder="https://example.com")
 keyword = st.text_input("🔑 Target Keyword", placeholder="e.g. running shoes, web design agency")
@@ -1060,6 +1063,7 @@ if analyze_clicked:
 
             # Increment usage counter after successful analysis
             st.session_state.daily_uses += 1
+            _render_badge(_badge_placeholder)
 
             # ==================== DISPLAY RESULTS ====================
             
@@ -1500,6 +1504,7 @@ if competitors_clicked:
         st.error("❌ Gemini API key not configured. Add GEMINI_API_KEY to Streamlit secrets.")
     else:
         st.session_state.daily_uses += 1
+        _render_badge(_badge_placeholder)
         try:
             from competitor_utils import get_competitors_via_gemini
             from location_utils import get_location_from_url
@@ -1546,13 +1551,34 @@ if competitors_clicked:
             st.success(f"✅ AI identified {len(gemini_competitors)} competitors ({country})")
 
             # ── Step 2: Analyze primary venue ───────────────────────────────
-            st.markdown("### 📊 SEO Score Comparison")
-            st.markdown(f"Analyzing **{url}** and {len(gemini_competitors)} competitors against keyword: **{keyword}**")
+            st.markdown(f"""
+<div style="background:#0d0d0d;border:1px solid rgba(176,32,37,0.2);border-radius:14px;
+            padding:1.6rem 2rem;margin:1.2rem 0 0.8rem;">
+    <div style="font-size:0.6rem;font-weight:800;color:#B02025;letter-spacing:0.18em;
+                text-transform:uppercase;margin-bottom:0.5rem;">Competitive Intelligence</div>
+    <div style="font-size:1.3rem;font-weight:800;color:#fff;margin-bottom:0.3rem;">
+        SEO Score Comparison
+    </div>
+    <div style="font-size:0.85rem;color:rgba(255,255,255,0.4);">
+        Benchmarking <strong style="color:rgba(255,255,255,0.7);">{url}</strong>
+        against <strong style="color:#B02025;">{len(gemini_competitors)}</strong> competitors
+        &nbsp;·&nbsp; keyword: <strong style="color:rgba(255,255,255,0.7);">{keyword}</strong>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
             benchmark_rows = []
             progress = st.progress(0)
             total = len(gemini_competitors) + 1
-            st.info("⏳ **Please be patient** — the analysis is running in the background fetching and scoring each competitor. It may look stuck but it's working hard. This typically takes **2–4 minutes** depending on the number of competitors.")
+            st.markdown("""
+<div style="background:rgba(126,199,163,0.06);border:1px solid rgba(126,199,163,0.15);
+            border-left:3px solid #7EC7A3;border-radius:10px;padding:0.9rem 1.2rem;
+            font-size:0.83rem;color:rgba(255,255,255,0.6);line-height:1.6;">
+    <strong style="color:#7EC7A3;">Processing in progress</strong> — fetching and scoring each site.
+    The page may appear idle but analysis is running in the background.
+    Typical completion: <strong style="color:rgba(255,255,255,0.75);">2–4 minutes</strong>.
+</div>
+""", unsafe_allow_html=True)
 
             with st.spinner("Analyzing primary venue..."):
                 try:
@@ -1623,19 +1649,38 @@ if competitors_clicked:
                 )[:10]
                 chart_rows = primary_valid + comp_valid
                 valid_df = pd.DataFrame(chart_rows)
+                # Short label: domain only
+                from urllib.parse import urlparse as _up
+                valid_df["Label"] = valid_df["URL"].apply(
+                    lambda u: _up(u).netloc.replace("www.", "") if u else ""
+                )
+                # Sort by score ascending so highest is at top of horizontal chart
+                valid_df = valid_df.sort_values("SEO Score", ascending=True)
                 fig = px.bar(
                     valid_df,
-                    x="Venue Name",
-                    y="SEO Score",
+                    x="SEO Score",
+                    y="Label",
                     color="Role",
                     text="SEO Score",
-                    color_discrete_map={"🏠 Primary Venue": "#667eea", "🎯 Competitor": "#FF7043"},
-                    title=f"SEO Score vs Competitors — keyword: '{keyword}' (top 10 shown)"
+                    orientation="h",
+                    color_discrete_map={"🏠 Primary Venue": "#B02025", "🎯 Competitor": "#3a3a3a"},
+                    title=f"SEO Score vs Competitors — '{keyword}'"
                 )
-                fig.update_traces(textposition="outside")
-                fig.update_layout(xaxis_tickangle=-30, height=420, showlegend=True,
-                                  paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                                  font=dict(color="white"))
+                fig.update_traces(textposition="outside", textfont_size=11,
+                                  marker_line_width=0)
+                chart_height = max(380, len(chart_rows) * 38)
+                fig.update_layout(
+                    height=chart_height,
+                    showlegend=True,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="rgba(255,255,255,0.7)", family="Outfit"),
+                    title_font=dict(size=13, color="rgba(255,255,255,0.5)"),
+                    xaxis=dict(gridcolor="rgba(255,255,255,0.05)", zeroline=False),
+                    yaxis=dict(gridcolor="rgba(0,0,0,0)"),
+                    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
+                    margin=dict(l=10, r=60, t=40, b=20),
+                )
                 st.plotly_chart(fig, use_container_width=True)
 
             # Summary metrics
@@ -1655,14 +1700,19 @@ if competitors_clicked:
                 m4.metric("Competitors Analysed", len(all_comps))
 
             # Full data table — all rows including errors
-            st.markdown("### 📋 Full Comparison Table")
+            st.markdown("""<div style="font-size:0.6rem;font-weight:800;color:#B02025;
+                letter-spacing:0.18em;text-transform:uppercase;margin:1.5rem 0 0.5rem;">
+                Full Comparison — All Venues</div>""", unsafe_allow_html=True)
             display_cols = ["Role", "Venue Name", "SEO Score", "Score Band", "Word Count", "HTTPS", "Schema"]
             available_cols = [c for c in display_cols if c in benchmark_df.columns]
             st.dataframe(benchmark_df[available_cols], use_container_width=True)
 
             # ── Step 5: AI Executive Summary ────────────────────────────────
             if primary_row and gemini_api_key:
-                st.markdown("### 🤖 AI Executive Summary")
+                st.markdown("""
+<div style="font-size:0.6rem;font-weight:800;color:#B02025;letter-spacing:0.18em;
+            text-transform:uppercase;margin:2rem 0 0.8rem;">AI Executive Report</div>
+""", unsafe_allow_html=True)
                 best_comp_name = best_comp.get("Venue Name", "top competitor") if best_comp else "N/A"
 
                 insights = generate_strategic_insights(
@@ -1671,7 +1721,7 @@ if competitors_clicked:
                     keyword=keyword
                 )
 
-                with st.spinner("Generating AI summary..."):
+                with st.spinner("Generating AI analysis report..."):
                     ai_summary = generate_ai_executive_summary(
                         gemini_api_key=gemini_api_key,
                         primary_name=primary_row.get("Venue Name", url),
@@ -1684,7 +1734,45 @@ if competitors_clicked:
                         benchmark_rows=benchmark_rows,
                     )
                 if ai_summary:
-                    st.markdown(ai_summary)
+                    # Parse sections and render as styled cards
+                    import re as _re
+                    section_colors = {
+                        "executive summary": "#7EC7A3",
+                        "strengths": "#4CAF50",
+                        "weaknesses": "#FF5252",
+                        "keyword": "#FF9800",
+                        "technical": "#B02025",
+                        "competitor": "#667eea",
+                        "priority": "#FFD600",
+                        "conclusion": "#7EC7A3",
+                    }
+                    sections = _re.split(r'\n##\s+', "\n" + ai_summary)
+                    for sec in sections:
+                        if not sec.strip():
+                            continue
+                        lines = sec.strip().split("\n", 1)
+                        title = lines[0].strip().lstrip("#").strip()
+                        body = lines[1].strip() if len(lines) > 1 else ""
+                        color = "#B02025"
+                        for k, v in section_colors.items():
+                            if k in title.lower():
+                                color = v
+                                break
+                        # Convert markdown bold/bullets to HTML
+                        body_html = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                        body_html = _re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:rgba(255,255,255,0.9);">\1</strong>', body_html)
+                        body_html = _re.sub(r'^\s*[-•]\s+', '<li>', body_html, flags=_re.MULTILINE)
+                        body_html = _re.sub(r'^\s*\d+\.\s+', '<li style="margin-bottom:0.4rem">', body_html, flags=_re.MULTILINE)
+                        body_html = body_html.replace("\n", "<br>")
+                        st.markdown(f"""
+<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.06);
+            border-left:3px solid {color};border-radius:12px;
+            padding:1.4rem 1.8rem;margin-bottom:1rem;">
+    <div style="font-size:0.7rem;font-weight:800;letter-spacing:0.14em;
+                text-transform:uppercase;color:{color};margin-bottom:0.8rem;">{title}</div>
+    <div style="font-size:0.88rem;color:rgba(255,255,255,0.65);line-height:1.75;">{body_html}</div>
+</div>
+""", unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"❌ Competitor analysis error: {e}")
