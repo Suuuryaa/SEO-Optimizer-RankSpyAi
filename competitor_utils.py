@@ -208,7 +208,7 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1024}
     }
 
-    # Discover available models for this API key first
+    # Discover available models for this API key — also validates the key early
     available_models = []
     for api_ver in ["v1beta", "v1"]:
         try:
@@ -216,9 +216,18 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
                 f"https://generativelanguage.googleapis.com/{api_ver}/models?key={gemini_api_key}",
                 timeout=15
             )
+            if list_resp.status_code == 401:
+                raise RuntimeError(
+                    "INVALID_API_KEY_401: Gemini API key is invalid or not authorised. "
+                    "Check that GEMINI_API_KEY is correctly set in Streamlit Cloud secrets."
+                )
+            if list_resp.status_code == 403:
+                raise RuntimeError(
+                    "FORBIDDEN_403: Generative Language API not enabled for this key/project. "
+                    "Enable it at console.cloud.google.com → APIs & Services."
+                )
             if list_resp.status_code == 200:
                 all_models = list_resp.json().get("models", [])
-                # Filter to generative models, prefer flash variants
                 available_models = [
                     m["name"].replace("models/", "")
                     for m in all_models
@@ -226,16 +235,17 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
                     and "gemini" in m.get("name", "").lower()
                 ]
                 if available_models:
-                    # Sort: prefer flash/faster models first
                     available_models.sort(key=lambda x: (
                         0 if "flash" in x else 1,
                         0 if "2.0" in x else (1 if "1.5" in x else 2)
                     ))
                     break
+        except RuntimeError:
+            raise
         except Exception:
             pass
 
-    # Fallback list if discovery fails (gemini-pro bare alias excluded — requires OAuth on v1)
+    # Fallback list if discovery network-fails (gemini-pro excluded — needs OAuth on v1)
     if not available_models:
         available_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b",
                            "gemini-1.5-pro", "gemini-1.0-pro"]
@@ -251,9 +261,13 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
                 resp = _req.post(endpoint, json=payload, timeout=30)
                 if resp.status_code == 429:
                     raise RuntimeError("SPENDING_CAP_429")
-                if resp.status_code == 401:
-                    last_error = f"{model}/{api_ver} → 401 (invalid API key — check GEMINI_API_KEY in Streamlit secrets)"
-                    break  # 401 means bad key, no point retrying other API versions
+                if resp.status_code in (401, 403):
+                    # Key-level failure — no point trying more models or versions
+                    code = resp.status_code
+                    raise RuntimeError(
+                        f"INVALID_API_KEY_{code}: Gemini API key rejected ({code}). "
+                        "Check GEMINI_API_KEY in Streamlit Cloud secrets."
+                    )
                 if resp.status_code == 200:
                     data = resp.json()
                     text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -266,17 +280,17 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
                         competitors = json.loads(text.strip())
                         return competitors if isinstance(competitors, list) else []
                     except json.JSONDecodeError:
-                        # Truncated response — likely spending cap
-                        last_error = f"{model}/{api_ver} → truncated JSON (spending cap?)"
+                        last_error = f"{model}/{api_ver} → truncated/invalid JSON (spending cap?)"
                         continue
                 last_error = f"{model}/{api_ver} → {resp.status_code}: {resp.text[:200]}"
             except RuntimeError as e:
-                if "SPENDING_CAP_429" in str(e):
+                err_str = str(e)
+                if "SPENDING_CAP_429" in err_str:
                     raise RuntimeError("spending cap reached — 429")
+                if "INVALID_API_KEY" in err_str or "FORBIDDEN" in err_str:
+                    raise
                 last_error = f"{model}/{api_ver} → {e}"
             except Exception as e:
                 last_error = f"{model}/{api_ver} → {e}"
 
-    if last_error and "401" in str(last_error):
-        raise RuntimeError(f"Gemini API key invalid (401). Check that GEMINI_API_KEY is correctly set in Streamlit secrets. Last error: {last_error}")
     raise RuntimeError(f"All Gemini endpoints failed. Models tried: {available_models[:5]}. Last error: {last_error}")

@@ -1240,8 +1240,10 @@ if competitors_clicked:
                     err_str = str(e)
                     if "429" in err_str or "spending cap" in err_str or "quota" in err_str.lower():
                         st.error("💳 **Gemini spending cap reached.** Go to [aistudio.google.com/spend](https://aistudio.google.com/spend) to increase your monthly limit.")
-                    elif "401" in err_str or "invalid API key" in err_str.lower():
-                        st.error("🔑 **Gemini API key invalid or not set.** Check that `GEMINI_API_KEY` is correctly configured in your Streamlit Cloud secrets.")
+                    elif "INVALID_API_KEY" in err_str or "401" in err_str:
+                        st.error("🔑 **Gemini API key is invalid.** In Streamlit Cloud → App settings → Secrets, make sure `GEMINI_API_KEY` is set to a valid key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey).")
+                    elif "FORBIDDEN" in err_str or "403" in err_str:
+                        st.error("🚫 **Gemini API not enabled.** The Generative Language API is not enabled for this key's project. Enable it at [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Generative Language API.")
                     else:
                         st.error(f"❌ Gemini failed: {e}")
                     gemini_competitors = []
