@@ -922,17 +922,12 @@ venue_urls_text = ""
 compare_url = ""
 
 if st.session_state.show_compare_urls:
-    st.markdown("""
-    <div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.08);
-                border-radius:12px;padding:1.2rem 1.4rem;margin-bottom:0.8rem;">
-    """, unsafe_allow_html=True)
     venue_urls_text = st.text_area(
         "COMPETITOR URLS — one per line",
         height=100,
         placeholder="https://competitor1.com\nhttps://competitor2.com\nhttps://competitor3.com",
     )
     compare_url = st.text_input("Or compare against a single URL", placeholder="https://competitor.com")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
