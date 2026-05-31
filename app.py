@@ -2389,7 +2389,7 @@ if competitors_clicked:
         st.error("❌ Gemini API key not configured. Add GEMINI_API_KEY to Streamlit secrets.")
     else:
         if not _using_own_keys():
-            _increment_ip_uses(_ip_hash)
+            _increment_ip_uses()
         _render_badge(_badge_placeholder)
         try:
             from competitor_utils import get_competitors_via_gemini
