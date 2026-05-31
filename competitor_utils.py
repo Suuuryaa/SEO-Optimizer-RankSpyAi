@@ -256,7 +256,7 @@ Domain: {domain}
 Target keyword: "{keyword}"
 {country_line}
 
-TASK: Identify 8-10 DIRECT BRAND competitors — real companies that:
+TASK: Identify ALL DIRECT BRAND competitors you can find (no minimum, no maximum) — real companies that:
 - Sell the same or very similar products/services as this business
 - Compete for the same customers in the same market/country
 - Have their own e-commerce or business website

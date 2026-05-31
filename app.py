@@ -1335,9 +1335,15 @@ if competitors_clicked:
                 if valid_comp_rows:
                     st.markdown("### 📊 Competitor Scores (primary site unavailable)")
 
-            # Score bar chart — only valid rows
+            # Score bar chart — primary + top 10 competitors by score
             if valid_rows:
-                valid_df = pd.DataFrame(valid_rows)
+                primary_valid = [r for r in valid_rows if "Primary" in r.get("Role", "")]
+                comp_valid = sorted(
+                    [r for r in valid_rows if "Competitor" in r.get("Role", "")],
+                    key=lambda x: x.get("SEO Score", 0), reverse=True
+                )[:10]
+                chart_rows = primary_valid + comp_valid
+                valid_df = pd.DataFrame(chart_rows)
                 fig = px.bar(
                     valid_df,
                     x="Venue Name",
@@ -1345,7 +1351,7 @@ if competitors_clicked:
                     color="Role",
                     text="SEO Score",
                     color_discrete_map={"🏠 Primary Venue": "#667eea", "🎯 Competitor": "#FF7043"},
-                    title=f"SEO Score vs Competitors — keyword: '{keyword}'"
+                    title=f"SEO Score vs Competitors — keyword: '{keyword}' (top 10 shown)"
                 )
                 fig.update_traces(textposition="outside")
                 fig.update_layout(xaxis_tickangle=-30, height=420, showlegend=True,
@@ -1366,7 +1372,8 @@ if competitors_clicked:
                 if best_comp:
                     gap = primary_row.get("SEO Score", 0) - best_comp.get("SEO Score", 0)
                     m3.metric("Gap vs Best", f"{gap:+d}", delta_color="normal")
-                m4.metric("Competitors Analysed", len([r for r in valid_rows if "Competitor" in r.get("Role","")]))
+                all_comps = [r for r in benchmark_rows if "Competitor" in r.get("Role","")]
+                m4.metric("Competitors Analysed", len(all_comps))
 
             # Full data table — all rows including errors
             st.markdown("### 📋 Full Comparison Table")
