@@ -84,10 +84,11 @@ def _fetch_with_stealthy(url):
 
 
 _SCRAPER_API_KEY = _os.environ.get("SCRAPER_API_KEY", "")
+_ZENROWS_API_KEY = _os.environ.get("ZENROWS_API_KEY", "")
 
 
 def _fetch_with_scraperapi(url):
-    """Tier 3: ScraperAPI residential proxy — bypasses datacenter IP blocks (needs SCRAPER_API_KEY)."""
+    """Tier 3: ScraperAPI residential proxy."""
     api_url = f"http://api.scraperapi.com?api_key={_SCRAPER_API_KEY}&url={url}&render=false"
     resp = requests.get(api_url, timeout=60)
     if resp.status_code != 200:
@@ -98,13 +99,26 @@ def _fetch_with_scraperapi(url):
     return BeautifulSoup(html, "lxml"), html
 
 
+def _fetch_with_zenrows(url):
+    """Tier 4: ZenRows residential proxy — fallback if ScraperAPI fails."""
+    api_url = f"https://api.zenrows.com/v1/?apikey={_ZENROWS_API_KEY}&url={url}"
+    resp = requests.get(api_url, timeout=60)
+    if resp.status_code != 200:
+        raise Exception(f"ZenRows returned HTTP {resp.status_code}")
+    html = resp.text
+    if len(html) < _MIN_HTML_BYTES:
+        raise Exception(f"ZenRows returned thin page ({len(html)} chars)")
+    return BeautifulSoup(html, "lxml"), html
+
+
 def get_page_soup(url):
     """
-    4-tier fetch strategy:
-    1. Plain requests (fastest, works for ~70% of sites)
-    2. Scrapling Fetcher / curl_cffi (TLS impersonation, bypasses most 403s)
-    3. ScraperAPI residential proxy (bypasses datacenter IP blocks — needs SCRAPER_API_KEY secret)
-    4. Scrapling StealthyFetcher / Playwright (full browser, JS SPAs + Cloudflare)
+    5-tier fetch strategy:
+    1. Plain requests
+    2. Scrapling Fetcher / curl_cffi (TLS impersonation)
+    3. ScraperAPI residential proxy (needs SCRAPER_API_KEY secret)
+    4. ZenRows residential proxy (needs ZENROWS_API_KEY secret — fallback if ScraperAPI fails)
+    5. Scrapling StealthyFetcher / Playwright
     """
     # ── Tier 1: plain requests ──────────────────────────────────────────────
     headers = {
@@ -160,17 +174,25 @@ def get_page_soup(url):
             logger.info(f"Tier3 ScraperAPI fetching {url}")
             return _fetch_with_scraperapi(url)
         except Exception as e:
-            logger.info(f"Tier3 ScraperAPI failed for {url}: {e} — escalating to StealthyFetcher")
+            logger.info(f"Tier3 ScraperAPI failed for {url}: {e} — escalating to ZenRows")
 
-    # ── Tier 4: StealthyFetcher (Playwright headless + Cloudflare solver) ───
+    # ── Tier 4: ZenRows residential proxy ───────────────────────────────────
+    if _ZENROWS_API_KEY:
+        try:
+            logger.info(f"Tier4 ZenRows fetching {url}")
+            return _fetch_with_zenrows(url)
+        except Exception as e:
+            logger.info(f"Tier4 ZenRows failed for {url}: {e} — escalating to StealthyFetcher")
+
+    # ── Tier 5: StealthyFetcher (Playwright headless + Cloudflare solver) ───
     if _STEALTHY_AVAILABLE:
         try:
-            logger.info(f"Tier4 StealthyFetcher fetching {url}")
+            logger.info(f"Tier5 StealthyFetcher fetching {url}")
             return _fetch_with_stealthy(url)
         except Exception as e:
             raise Exception(f"All fetch tiers failed for {url}. Last error: {e}")
 
-    raise Exception(f"Could not fetch {url} — site blocks datacenter IPs. Add SCRAPER_API_KEY to Streamlit secrets to bypass.")
+    raise Exception(f"Could not fetch {url} — site blocks datacenter IPs. Add SCRAPER_API_KEY or ZENROWS_API_KEY to Streamlit secrets.")
 
 
 # Keep tenacity retry on top for transient network errors
