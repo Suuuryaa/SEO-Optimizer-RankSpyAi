@@ -2144,6 +2144,30 @@ with col_btn1:
 with col_btn2:
     competitors_clicked = st.button("🎯 Find Competitors", use_container_width=True, type="secondary")
 
+# ==================== RESULTS TOGGLE (inline, below buttons) ====================
+
+_has_seo  = st.session_state.seo_data is not None
+_has_comp = st.session_state.comp_data is not None
+
+if _has_seo or _has_comp:
+    st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:0.6rem;font-weight:800;color:rgba(255,255,255,0.25);
+letter-spacing:0.18em;text-transform:uppercase;margin-bottom:0.4rem;">Switch Results View</div>""", unsafe_allow_html=True)
+    _t1, _t2, _spacer = st.columns([1.4, 1.8, 8])
+    with _t1:
+        if st.button("SEO Analysis", key="view_seo",
+                     type="primary" if st.session_state.results_view == "seo" else "secondary",
+                     disabled=not _has_seo):
+            st.session_state.results_view = "seo"
+            st.rerun()
+    with _t2:
+        if st.button("Competitor Intel", key="view_comp",
+                     type="primary" if st.session_state.results_view == "comp" else "secondary",
+                     disabled=not _has_comp):
+            st.session_state.results_view = "comp"
+            st.rerun()
+    st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:0.8rem 0 0;'>", unsafe_allow_html=True)
+
 # ==================== ANALYZE SECTION ====================
 
 if analyze_clicked:
@@ -2490,36 +2514,6 @@ if competitors_clicked:
 
         except Exception as e:
             st.error(f"❌ Competitor analysis error: {e}")
-
-# ==================== RESULTS TOGGLE SWITCHER ====================
-
-_has_seo  = st.session_state.seo_data is not None
-_has_comp = st.session_state.comp_data is not None
-
-if _has_seo or _has_comp:
-    st.markdown("<div style='margin-top:8rem;'></div>", unsafe_allow_html=True)
-
-    st.markdown("""
-<div style="font-size:0.6rem;font-weight:800;color:rgba(255,255,255,0.25);
-            letter-spacing:0.18em;text-transform:uppercase;margin-bottom:0.5rem;">
-    Switch Results View
-</div>""", unsafe_allow_html=True)
-
-    _t1, _t2, _spacer = st.columns([1.4, 1.8, 8])
-    with _t1:
-        if st.button("SEO Analysis", key="view_seo",
-                     type="primary" if st.session_state.results_view == "seo" else "secondary",
-                     disabled=not _has_seo):
-            st.session_state.results_view = "seo"
-            st.rerun()
-    with _t2:
-        if st.button("Competitor Intel", key="view_comp",
-                     type="primary" if st.session_state.results_view == "comp" else "secondary",
-                     disabled=not _has_comp):
-            st.session_state.results_view = "comp"
-            st.rerun()
-
-    st.markdown("<hr style='border-color:rgba(255,255,255,0.06);margin:1rem 0;'>", unsafe_allow_html=True)
 
 # Render stored results when toggle is used (no new analysis running)
 if not analyze_clicked and not competitors_clicked:
