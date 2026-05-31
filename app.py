@@ -47,10 +47,9 @@ except (KeyError, FileNotFoundError, AttributeError):
     except:
         pass
 
-# ==================== PER-IP RATE LIMITING (Upstash Redis) ====================
-IP_LIMIT = 4
+# ==================== GLOBAL RATE LIMITING (Upstash Redis) ====================
+GLOBAL_LIMIT = 30  # shared pool across ALL users
 
-# Load Upstash credentials from secrets
 _upstash_url = ""
 _upstash_token = ""
 try:
@@ -58,17 +57,6 @@ try:
     _upstash_token = st.secrets["UPSTASH_REDIS_REST_TOKEN"]
 except Exception:
     pass
-
-def _get_client_ip():
-    try:
-        headers = st.context.headers
-        ip = headers.get("X-Forwarded-For", headers.get("X-Real-IP", "local"))
-        return ip.split(",")[0].strip()
-    except Exception:
-        return "local"
-
-def _hash_ip(ip):
-    return hashlib.sha256(ip.encode()).hexdigest()[:16]
 
 def _redis_get(key):
     if not _upstash_url or not _upstash_token:
@@ -83,7 +71,7 @@ def _redis_get(key):
         val = resp.json().get("result")
         return int(val) if val else 0
     except Exception:
-        return 0  # fail open
+        return 0
 
 def _redis_incr(key):
     if not _upstash_url or not _upstash_token:
@@ -97,67 +85,22 @@ def _redis_incr(key):
         )
         return int(resp.json().get("result", 1))
     except Exception:
-        return 1  # fail open
+        return 1
 
-_client_ip = _get_client_ip()
-_ip_hash = _hash_ip(_client_ip)
+_GLOBAL_KEY = "global:uses"
 
-def _get_ip_uses():
-    return _redis_get(f"ip:{_ip_hash}")
+def _get_global_uses():
+    return _redis_get(_GLOBAL_KEY)
 
-def _increment_ip_uses():
-    return _redis_incr(f"ip:{_ip_hash}")
-
-# ==================== ADMIN MODE ====================
-_admin_password = ""
-try:
-    _admin_password = st.secrets["ADMIN_PASSWORD"]
-except Exception:
-    pass
-
-if "is_admin" not in st.session_state:
-    st.session_state.is_admin = False
-if "show_admin_login" not in st.session_state:
-    st.session_state.show_admin_login = False
-if "seo_data" not in st.session_state:
-    st.session_state.seo_data = None
-if "comp_data" not in st.session_state:
-    st.session_state.comp_data = None
-if "results_view" not in st.session_state:
-    st.session_state.results_view = "seo"
-
-# Session state for user-provided keys
-if "user_serper_key" not in st.session_state:
-    st.session_state.user_serper_key = ""
-if "user_gemini_key" not in st.session_state:
-    st.session_state.user_gemini_key = ""
-if "user_pagespeed_key" not in st.session_state:
-    st.session_state.user_pagespeed_key = ""
-if "user_scraperapi_key" not in st.session_state:
-    st.session_state.user_scraperapi_key = ""
-
-def _using_own_keys():
-    return bool(st.session_state.user_serper_key and st.session_state.user_gemini_key)
-
-def _active_keys():
-    """Return (serp, gemini, pagespeed, scraperapi) keys to use."""
-    if st.session_state.is_admin:
-        return (_default_serper, _default_gemini, _default_pagespeed, "")
-    if _using_own_keys():
-        return (
-            st.session_state.user_serper_key,
-            st.session_state.user_gemini_key,
-            st.session_state.user_pagespeed_key or _default_pagespeed,
-            st.session_state.user_scraperapi_key,
-        )
-    return (_default_serper, _default_gemini, _default_pagespeed, "")
+def _increment_global_uses():
+    return _redis_incr(_GLOBAL_KEY)
 
 def _check_limit():
     """Return (allowed, remaining). Admins and own-key users always allowed."""
     if st.session_state.is_admin or _using_own_keys():
         return True, 999
-    used = _get_ip_uses()
-    remaining = max(0, IP_LIMIT - used)
+    used = _get_global_uses()
+    remaining = max(0, GLOBAL_LIMIT - used)
     return remaining > 0, remaining
 
 # Active keys for this session
@@ -2042,10 +1985,10 @@ def _render_badge(placeholder):
         badge_text = '<strong style="color:#7EC7A3;">Unlimited</strong>'
         dot_color = "#7EC7A3"
     else:
-        used = _get_ip_uses()
-        rem = max(0, IP_LIMIT - used)
-        bar_color = "#00C853" if rem == IP_LIMIT else "#FFA726" if rem > 0 else "#EF5350"
-        badge_text = f'<strong style="color:{bar_color}">{rem}</strong> / {IP_LIMIT} free tries left'
+        used = _get_global_uses()
+        rem = max(0, GLOBAL_LIMIT - used)
+        bar_color = "#00C853" if rem == GLOBAL_LIMIT else "#FFA726" if rem > 0 else "#EF5350"
+        badge_text = f'<strong style="color:{bar_color}">{rem}</strong> / {GLOBAL_LIMIT} free tries left'
         dot_color = bar_color
     placeholder.markdown(f"""
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
@@ -2338,7 +2281,7 @@ if analyze_clicked:
 
             # Increment IP usage counter
             if not _using_own_keys():
-                _increment_ip_uses()
+                _increment_global_uses()
             _render_badge(_badge_placeholder)
             # Store all SEO results in session state for persistent display
             st.session_state.seo_data = dict(
@@ -2389,7 +2332,7 @@ if competitors_clicked:
         st.error("❌ Gemini API key not configured. Add GEMINI_API_KEY to Streamlit secrets.")
     else:
         if not _using_own_keys():
-            _increment_ip_uses()
+            _increment_global_uses()
         _render_badge(_badge_placeholder)
         try:
             from competitor_utils import get_competitors_via_gemini
