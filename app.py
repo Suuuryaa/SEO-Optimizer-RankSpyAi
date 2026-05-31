@@ -440,9 +440,9 @@ st.markdown("""
 * { font-family: 'Outfit', sans-serif !important; }
 .main > div { padding-top: 0 !important; }
 .block-container {
-    padding: 0 4rem 4rem !important;
-    max-width: 1100px !important;
-    margin: 0 auto !important;
+    padding: 0 2.5rem 4rem !important;
+    max-width: 100% !important;
+    margin: 0 !important;
 }
 
 /* Full black base + moving grid lines (Webflow aesthetic) */
@@ -479,8 +479,8 @@ st.markdown("""
     border: none;
     border-bottom: 1px solid rgba(176,32,37,0.2);
     border-radius: 0;
-    padding: 4rem 4rem 3rem;
-    margin: 0 -4rem 2rem;
+    padding: 4rem 2.5rem 3rem;
+    margin: 0 -2.5rem 2rem;
     position: relative; overflow: hidden;
     animation: fadeInUp 0.8s ease-out both;
 }
@@ -854,6 +854,22 @@ header[data-testid="stHeader"] { display: none !important; }
 /* ── Tighten vertical gaps ── */
 .stTextInput { margin-bottom: 0.3rem !important; }
 div[data-testid="column"] { padding: 0 0.4rem !important; }
+
+/* ── Compare toggle button — small inline style ── */
+button[kind="secondary"][data-testid="baseButton-secondary"]:has-text("COMPARE") {
+    width: auto !important;
+}
+div[data-testid="stButton"]:has(button[key="toggle_compare"]) button {
+    width: auto !important;
+    font-size: 0.72rem !important;
+    height: 2.4em !important;
+    padding: 0 1.2rem !important;
+    background: rgba(255,255,255,0.03) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    letter-spacing: 0.1em !important;
+    color: rgba(255,255,255,0.4) !important;
+    border-radius: 8px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -865,12 +881,12 @@ st.markdown("""
     <div class="hero-title">BOLD STRATEGY.<br><span class="hero-title-accent">STRIKING RESULTS.</span></div>
     <p class="hero-sub">Analyze, benchmark, and outrank your competitors — powered by AI, driven by data.</p>
     <div class="hero-badges">
-        <span class="hero-badge">⚡ Real-time Analysis</span>
-        <span class="hero-badge">🤖 AI Competitor Intel</span>
-        <span class="hero-badge">📊 SEO Scoring</span>
-        <span class="hero-badge">🌍 Geo Targeting</span>
-        <span class="hero-badge">🔥 Bot Bypass</span>
-        <span class="hero-badge">📝 AI Reports</span>
+        <span class="hero-badge">Real-Time Intelligence</span>
+        <span class="hero-badge">Competitive Benchmarking</span>
+        <span class="hero-badge">Technical SEO Audit</span>
+        <span class="hero-badge">AI-Powered Insights</span>
+        <span class="hero-badge">Enterprise-Grade Analysis</span>
+        <span class="hero-badge">Strategic Action Plans</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -894,19 +910,29 @@ st.markdown(f"""
 url = st.text_input("🌐 Website URL", placeholder="https://example.com")
 keyword = st.text_input("🔑 Target Keyword", placeholder="e.g. running shoes, web design agency")
 
-# ── Advanced: Compare Specific URLs (collapsible) ────────────────────────────
-with st.expander("🔗 Compare Specific URLs — optional"):
+# ── Advanced: Compare Specific URLs (custom collapsible — avoids Streamlit _arrow_right bug) ──
+if "show_compare_urls" not in st.session_state:
+    st.session_state.show_compare_urls = False
+
+toggle_label = "▲  COMPARE SPECIFIC URLS" if st.session_state.show_compare_urls else "▼  COMPARE SPECIFIC URLS  —  optional"
+if st.button(toggle_label, key="toggle_compare", type="secondary"):
+    st.session_state.show_compare_urls = not st.session_state.show_compare_urls
+
+venue_urls_text = ""
+compare_url = ""
+
+if st.session_state.show_compare_urls:
+    st.markdown("""
+    <div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.08);
+                border-radius:12px;padding:1.2rem 1.4rem;margin-bottom:0.8rem;">
+    """, unsafe_allow_html=True)
     venue_urls_text = st.text_area(
-        "Enter one URL per line",
+        "COMPETITOR URLS — one per line",
         height=100,
         placeholder="https://competitor1.com\nhttps://competitor2.com\nhttps://competitor3.com",
     )
     compare_url = st.text_input("Or compare against a single URL", placeholder="https://competitor.com")
-
-if "venue_urls_text" not in dir():
-    venue_urls_text = ""
-if "compare_url" not in dir():
-    compare_url = ""
+    st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
