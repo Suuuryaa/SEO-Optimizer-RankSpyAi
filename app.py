@@ -533,6 +533,9 @@ st.markdown("""
     0%   { transform: translateX(0); }
     100% { transform: translateX(-50%); }
 }
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
 
 /* ═══════════════════════════════════════════════
    BASE — Pure black like DigitalStrike
@@ -1264,22 +1267,51 @@ if analyze_clicked:
     
     if url and keyword:
         try:
-            # Progress tracking
+            # ── Styled loading card ──
+            loading_card = st.empty()
             progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            status_text.text("📄 Fetching page content...")
-            progress_bar.progress(20)
-            time.sleep(0.3)
-            
+
+            def _set_step(label, pct, step=1, total=5):
+                steps_html = "".join([
+                    f'<div style="width:8px;height:8px;border-radius:50%;background:'
+                    f'{"#B02025" if i < step else ("rgba(176,32,37,0.4)" if i == step else "rgba(255,255,255,0.1)")};">'
+                    f'</div>' for i in range(1, total+1)
+                ])
+                loading_card.markdown(f"""
+<div style="background:#0d0d0d;border:1px solid rgba(176,32,37,0.2);border-radius:14px;
+            padding:1.4rem 2rem;margin:0.8rem 0;display:flex;align-items:center;gap:1.5rem;">
+    <div style="flex-shrink:0;">
+        <div style="width:44px;height:44px;border-radius:50%;
+                    border:2px solid rgba(176,32,37,0.3);
+                    border-top-color:#B02025;
+                    animation:spin 1s linear infinite;
+                    display:flex;align-items:center;justify-content:center;">
+        </div>
+    </div>
+    <div style="flex:1;">
+        <div style="font-size:0.68rem;font-weight:700;letter-spacing:0.15em;
+                    text-transform:uppercase;color:#B02025;margin-bottom:0.3rem;">
+            Analyzing — Step {step} of {total}
+        </div>
+        <div style="font-size:0.95rem;font-weight:600;color:rgba(255,255,255,0.85);">
+            {label}
+        </div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;">{steps_html}</div>
+</div>
+""", unsafe_allow_html=True)
+                progress_bar.progress(pct)
+
+            _set_step("Fetching page content", 20, 1)
+            time.sleep(0.2)
+
             st.session_state.keyword = keyword
             st.session_state.url = url
 
             soup, raw_html = get_page_soup(url)
 
-            status_text.text("🔍 Extracting SEO elements...")
-            progress_bar.progress(40)
-            time.sleep(0.3)
+            _set_step("Extracting SEO elements", 40, 2)
+            time.sleep(0.2)
 
             title = get_title(soup)
             meta = get_meta_description(soup)
@@ -1304,16 +1336,14 @@ if analyze_clicked:
             meta_len = meta_description_length(meta)
             
             # Technical SEO checks
-            status_text.text("⚙️ Running technical SEO audit...")
-            progress_bar.progress(60)
-            time.sleep(0.3)
-            
+            _set_step("Running technical SEO audit", 60, 3)
+            time.sleep(0.2)
+
             tech_seo = check_technical_seo(url, soup)
             has_schema = has_schema_markup(soup)
 
-            status_text.text("📊 Calculating SEO score...")
-            progress_bar.progress(80)
-            time.sleep(0.3)
+            _set_step("Calculating SEO score", 80, 4)
+            time.sleep(0.2)
 
             score, recs = calculate_seo_score(
                 title,
@@ -1344,8 +1374,7 @@ if analyze_clicked:
             pagespeed_data = None
             if pagespeed_api_key:
                 try:
-                    status_text.text("⚡ Fetching PageSpeed data...")
-                    progress_bar.progress(90)
+                    _set_step("Fetching Core Web Vitals", 90, 5)
                     pagespeed_data = get_pagespeed_data(url, pagespeed_api_key, strategy="mobile")
                 except Exception:
                     pass  # PageSpeed is optional; skip silently on timeout/error
@@ -1365,10 +1394,8 @@ if analyze_clicked:
             )
 
             progress_bar.progress(100)
-            status_text.text("✅ Analysis complete!")
-            time.sleep(0.5)
+            loading_card.empty()
             progress_bar.empty()
-            status_text.empty()
 
             # Increment IP usage counter
             if not _using_own_keys():
@@ -1376,12 +1403,31 @@ if analyze_clicked:
             _render_badge(_badge_placeholder)
 
             # ==================== DISPLAY RESULTS ====================
-            
-            st.success("✅ Analysis Complete!")
-            st.markdown("---")
+            from urllib.parse import urlparse as _urlp
+            _domain = _urlp(url).netloc.replace("www.", "")
+            st.markdown(f"""
+<div style="background:linear-gradient(135deg,#0d0d0d 0%,#111 100%);
+            border:1px solid rgba(176,32,37,0.2);border-radius:16px;
+            padding:1.4rem 2rem;margin:1rem 0 1.5rem;
+            display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+    <div>
+        <div style="font-size:0.6rem;font-weight:800;color:#B02025;letter-spacing:0.18em;
+                    text-transform:uppercase;margin-bottom:0.3rem;">Analysis Complete</div>
+        <div style="font-size:1.1rem;font-weight:700;color:#fff;">{_domain}</div>
+        <div style="font-size:0.78rem;color:rgba(255,255,255,0.35);margin-top:0.1rem;">
+            Keyword: <span style="color:rgba(255,255,255,0.6);">{keyword}</span>
+        </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:0.5rem;">
+        <div style="width:10px;height:10px;border-radius:50%;background:#00C853;
+                    box-shadow:0 0 8px #00C853;"></div>
+        <span style="font-size:0.72rem;font-weight:600;color:rgba(255,255,255,0.45);
+                     letter-spacing:0.08em;text-transform:uppercase;">Report Ready</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-            # Tabs for organized display
-            tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Overview", "🔧 Technical SEO", "📝 Content Analysis", "🎯 Recommendations", "🤖 GEO Score"])
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["Overview", "Technical SEO", "Content Analysis", "Recommendations", "GEO Score"])
 
             with tab1:
                 # Score Gauge + Key Metrics
@@ -1392,17 +1438,25 @@ if analyze_clicked:
                     st.markdown(f"**Score Band:** {get_score_band(score)}")
 
                 with col_metrics:
-                    # ── KPI cards row ────────────────────────────────────
                     st.markdown("<div class='section-header'>Key Metrics</div>", unsafe_allow_html=True)
+                    def _metric(label, val, color, sub=""):
+                        return f"""<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.06);
+                            border-top:2px solid {color};border-radius:10px;
+                            padding:1rem 1rem 0.8rem;text-align:center;">
+                            <div style="font-size:1.8rem;font-weight:800;color:{color};line-height:1;">{val}</div>
+                            <div style="font-size:0.6rem;font-weight:700;letter-spacing:0.1em;
+                                        text-transform:uppercase;color:rgba(255,255,255,0.35);margin-top:0.3rem;">{label}</div>
+                            {"<div style='font-size:0.65rem;color:rgba(255,255,255,0.2);margin-top:0.1rem;'>"+sub+"</div>" if sub else ""}
+                            </div>"""
                     kc1, kc2, kc3 = st.columns(3)
-                    kc1.markdown(kpi_card_html("Word Count", f"{wc:,}", "#667eea", "📝"), unsafe_allow_html=True)
-                    kc2.markdown(kpi_card_html("Keyword Hits", kc, "#00C853" if kc >= 3 else "#EF5350", "🔑"), unsafe_allow_html=True)
-                    kc3.markdown(kpi_card_html("Keyword Density", f"{kd}%", "#FFA726", "📊"), unsafe_allow_html=True)
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    kc1.markdown(_metric("Word Count", f"{wc:,}", "#B02025"), unsafe_allow_html=True)
+                    kc2.markdown(_metric("Keyword Hits", kc, "#00C853" if kc >= 3 else "#EF5350"), unsafe_allow_html=True)
+                    kc3.markdown(_metric("Keyword Density", f"{kd}%", "#FF9800"), unsafe_allow_html=True)
+                    st.markdown("<div style='margin:0.5rem 0;'></div>", unsafe_allow_html=True)
                     kc4, kc5, kc6 = st.columns(3)
-                    kc4.markdown(kpi_card_html("Internal Links", len(internal), "#26C6DA", "🔗"), unsafe_allow_html=True)
-                    kc5.markdown(kpi_card_html("External Links", len(external), "#AB47BC", "🌐"), unsafe_allow_html=True)
-                    kc6.markdown(kpi_card_html("Missing ALTs", len(missing_alt), "#EF5350" if missing_alt else "#00C853", "🖼️"), unsafe_allow_html=True)
+                    kc4.markdown(_metric("Internal Links", len(internal), "#7EC7A3"), unsafe_allow_html=True)
+                    kc5.markdown(_metric("External Links", len(external), "#667eea"), unsafe_allow_html=True)
+                    kc6.markdown(_metric("Missing ALTs", len(missing_alt), "#EF5350" if missing_alt else "#00C853"), unsafe_allow_html=True)
 
                 # ── Row 2: Radar + SEO factors bar + Link donut ──────────
                 st.markdown("---")
@@ -1437,12 +1491,11 @@ if analyze_clicked:
                     st.plotly_chart(create_horizontal_bar(bar_labels, bar_vals, title="Factor Scores"), use_container_width=True)
 
                 with r2c:
-                    # Donut: link composition
                     total_links = len(internal) + len(external) or 1
                     st.plotly_chart(create_donut_chart(
                         labels=["Internal", "External"],
                         values=[len(internal), max(len(external), 1)],
-                        colors=["#667eea", "#26C6DA"],
+                        colors=["#B02025", "#7EC7A3"],
                         title="Link Distribution",
                         center_text=f"{total_links}<br>links"
                     ), use_container_width=True)
@@ -1464,13 +1517,23 @@ if analyze_clicked:
 
                 with r3b:
                     st.markdown("<div class='section-header'>Executive Summary</div>", unsafe_allow_html=True)
+                    _summary_items = [
+                        ("#7EC7A3", "Overall Status", summary['Overall Status']),
+                        ("#4CAF50", "Strongest Area", summary['Strongest Area']),
+                        ("#FF9800", "Top Issue", summary['Top Issue']),
+                        ("#B02025", "Priority Action", summary['Priority Action']),
+                    ]
                     sc1, sc2 = st.columns(2)
-                    with sc1:
-                        st.info(f"**Status** — {summary['Overall Status']}")
-                        st.success(f"**Strength** — {summary['Strongest Area']}")
-                    with sc2:
-                        st.warning(f"**Top Issue** — {summary['Top Issue']}")
-                        st.error(f"**Priority** — {summary['Priority Action']}")
+                    for i, (color, label, text) in enumerate(_summary_items):
+                        col = sc1 if i % 2 == 0 else sc2
+                        col.markdown(f"""
+<div style="background:#0a0a0a;border:1px solid rgba(255,255,255,0.05);
+            border-left:3px solid {color};border-radius:8px;
+            padding:0.8rem 1rem;margin-bottom:0.6rem;">
+    <div style="font-size:0.58rem;font-weight:800;letter-spacing:0.12em;
+                text-transform:uppercase;color:{color};margin-bottom:0.3rem;">{label}</div>
+    <div style="font-size:0.82rem;color:rgba(255,255,255,0.65);line-height:1.4;">{text}</div>
+</div>""", unsafe_allow_html=True)
 
             with tab2:
                 st.markdown("### 🔧 Technical SEO Audit")
