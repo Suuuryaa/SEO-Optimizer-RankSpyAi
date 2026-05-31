@@ -10,7 +10,12 @@ import json
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Try to import Scrapling's curl_cffi-based Fetcher for bot-protected sites
+# Import Scrapling — try local Scrapling-main first, then fall back to PyPI install
+import os as _os, sys as _sys
+_scrapling_local = _os.path.join(_os.path.dirname(__file__), "Scrapling-main")
+if _os.path.isdir(_scrapling_local) and _scrapling_local not in _sys.path:
+    _sys.path.insert(0, _scrapling_local)
+
 try:
     from scrapling.fetchers import Fetcher as _ScraplingFetcher
     _SCRAPLING_AVAILABLE = True
@@ -19,11 +24,13 @@ except Exception:
 
 
 def _scrapling_fetch(url):
-    """Use Scrapling (curl_cffi TLS impersonation) to bypass bot protection."""
-    resp = _ScraplingFetcher.get(url, timeout=30, follow_redirects=True, stealthy_headers=True)
+    """Use Scrapling (curl_cffi TLS impersonation) to bypass Cloudflare/bot walls."""
+    resp = _ScraplingFetcher.get(url, timeout=30, stealthy_headers=True)
     if resp.status not in (200, 206):
         raise Exception(f"Scrapling got HTTP {resp.status} from {url}")
-    html = resp.html_content if hasattr(resp, "html_content") else str(resp.content)
+    html = resp.html_content  # Scrapling Response uses .html_content not .content
+    if not html or len(html) < 200:
+        raise Exception(f"Scrapling returned near-empty page ({len(html or '')} chars) — site may be JS-only")
     return BeautifulSoup(html, "lxml"), html
 
 
