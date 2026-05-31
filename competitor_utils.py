@@ -73,20 +73,33 @@ def classify_competitor(url, title="", primary_domain=""):
     # ========== NON-BUSINESS FILTERS (Strict) ==========
     
     # Wikipedia and encyclopedias
-    if any(x in url_lower for x in ["wikipedia.org", "wikia.com", "fandom.com", "britannica.com"]):
+    if any(x in url_lower for x in [
+        "wikipedia.org", "wikia.com", "fandom.com", "britannica.com",
+        "dictionary.com", "merriam-webster.com", "dictionary.cambridge.org",
+        "oxfordlearnersdictionaries.com", "thefreedictionary.com",
+        "collinsdictionary.com", "macmillandictionary.com",
+    ]):
         return "Encyclopedia"
-    
+
     # Forums and Q&A sites
     if any(x in url_lower for x in ["reddit.com", "quora.com", "stackexchange.com", "answers.com", "forum"]):
         return "Forum"
-    
+
     # Social media platforms
     if any(x in url_lower for x in ["facebook.com", "instagram.com", "tiktok.com", "twitter.com", "linkedin.com", "pinterest.com"]):
         return "Social"
-    
+
     # Video platforms
     if any(x in url_lower for x in ["youtube.com", "youtu.be", "vimeo.com", "dailymotion.com"]):
         return "Social"
+
+    # Gaming and entertainment platforms
+    if any(x in url_lower for x in [
+        "store.steampowered.com", "steampowered.com", "epicgames.com",
+        "itch.io", "gog.com", "humblebundle.com", "origin.com",
+        "gamespot.com", "ign.com", "pcgamer.com",
+    ]):
+        return "Content"
     
     # Business profile / directory / data aggregator sites
     if any(x in url_lower for x in [
@@ -282,7 +295,7 @@ def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None, serp
 GOOGLE SERP — sites currently ranking for "{keyword}" (direct business competitors only, noise already removed):
 {serp_lines}
 
-These are CONFIRMED ranking competitors — include all of them plus any other known direct competitors you are aware of.
+Use these as hints — include any that are genuine direct business competitors, but SKIP any that are dictionaries, gaming platforms, entertainment sites, or non-business pages even if they appear here.
 """
 
     prompt = f"""You are a senior competitive intelligence analyst. Your task is to identify DIRECT BRAND competitors for the business below with maximum accuracy.
