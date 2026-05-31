@@ -73,33 +73,20 @@ def classify_competitor(url, title="", primary_domain=""):
     # ========== NON-BUSINESS FILTERS (Strict) ==========
     
     # Wikipedia and encyclopedias
-    if any(x in url_lower for x in [
-        "wikipedia.org", "wikia.com", "fandom.com", "britannica.com",
-        "dictionary.com", "merriam-webster.com", "dictionary.cambridge.org",
-        "oxfordlearnersdictionaries.com", "thefreedictionary.com",
-        "collinsdictionary.com", "macmillandictionary.com",
-    ]):
+    if any(x in url_lower for x in ["wikipedia.org", "wikia.com", "fandom.com", "britannica.com"]):
         return "Encyclopedia"
-
+    
     # Forums and Q&A sites
     if any(x in url_lower for x in ["reddit.com", "quora.com", "stackexchange.com", "answers.com", "forum"]):
         return "Forum"
-
+    
     # Social media platforms
     if any(x in url_lower for x in ["facebook.com", "instagram.com", "tiktok.com", "twitter.com", "linkedin.com", "pinterest.com"]):
         return "Social"
-
+    
     # Video platforms
     if any(x in url_lower for x in ["youtube.com", "youtu.be", "vimeo.com", "dailymotion.com"]):
         return "Social"
-
-    # Gaming and entertainment platforms
-    if any(x in url_lower for x in [
-        "store.steampowered.com", "steampowered.com", "epicgames.com",
-        "itch.io", "gog.com", "humblebundle.com", "origin.com",
-        "gamespot.com", "ign.com", "pcgamer.com",
-    ]):
-        return "Content"
     
     # Business profile / directory / data aggregator sites
     if any(x in url_lower for x in [
@@ -280,23 +267,27 @@ def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None, serp
         "directly to customers and would bid on or rank for this keyword."
     )
 
-    # ── SERP context — all results, Gemini decides what's relevant ──
+    # ── SERP context — filtered direct competitors only ──
     serp_section = ""
     if serp_results:
-        serp_lines = "\n".join(
-            f"  {i+1}. {r.get('title','').strip()} — {r.get('link','')}"
-            for i, r in enumerate(serp_results[:15])
-        )
-        serp_section = f"""
-GOOGLE SERP — raw results currently ranking for "{keyword}":
+        filtered = [r for r in serp_results if classify_competitor(
+            r.get("link",""), r.get("title",""), domain
+        ) == "Direct Competitor"][:12]
+        if filtered:
+            serp_lines = "\n".join(
+                f"  {i+1}. {r.get('title','').strip()} — {r.get('link','')}"
+                for i, r in enumerate(filtered)
+            )
+            serp_section = f"""
+GOOGLE SERP — sites currently ranking for "{keyword}" (direct business competitors only, noise already removed):
 {serp_lines}
 
-Review these results. Include any that are genuine direct business competitors of {domain}. Ignore dictionaries, forums, social media, gaming sites, news articles, and any non-business pages.
+These are CONFIRMED ranking competitors — include all of them plus any other known direct competitors you are aware of.
 """
 
-    prompt = f"""You are a senior competitive intelligence analyst. Identify DIRECT competitors for the business below.
+    prompt = f"""You are a senior competitive intelligence analyst. Your task is to identify DIRECT BRAND competitors for the business below with maximum accuracy.
 
-BUSINESS URL: {url}
+BUSINESS: {url}
 DOMAIN: {domain}
 TARGET KEYWORD: "{keyword}"
 {geo_line}
@@ -304,40 +295,26 @@ TARGET KEYWORD: "{keyword}"
 {serp_section}
 {intent_note}
 
-STEP 1 — Deeply understand the business from its URL:
-Analyse {domain} carefully:
-- What brand is this? (e.g. calvinklein.co.nz = Calvin Klein, a global luxury fashion brand)
-- What industry/category? (e.g. fashion, SaaS, hospitality, legal services)
-- What country/market does this domain serve? (e.g. .co.nz = New Zealand)
-- What does the TARGET KEYWORD "{keyword}" mean IN THE CONTEXT of this business?
-  (e.g. "off" on a fashion site = discounts/sales, not the word "off"; "cloud" on a tech site = cloud software, not weather)
+WHAT COUNTS AS A DIRECT COMPETITOR:
+- A real company with its own website that sells the same/very similar products or services
+- Targets the same customers in the same geographic market
+- Would appear on the same search results page for the target keyword
+- Has meaningful market presence (not a one-person blog or hobby site)
 
-Use this full understanding to anchor your search — only return brands operating in the SAME industry, serving the SAME market.
-
-STEP 2 — A site qualifies as a DIRECT COMPETITOR only if ALL of these are true:
-✓ It is a real company with its own website (not a platform, directory, or aggregator)
-✓ It sells the same or very similar products/services as {domain}
-✓ It targets the same type of customer in the same geographic market
-✓ It has a working, indexable website with meaningful content
-✓ You are confident the domain is correct and the site is live
-
-STEP 3 — HARD EXCLUSIONS — reject immediately, no exceptions:
-✗ {domain} itself
-✗ Dictionaries, encyclopedias (Wikipedia, Merriam-Webster, Cambridge Dictionary, etc.)
-✗ Forums, Q&A, Reddit, Quora
-✗ Social media (Facebook, Instagram, TikTok, LinkedIn, Pinterest, YouTube)
-✗ Gaming platforms (Steam, Epic Games, etc.)
-✗ News, media, press release sites
-✗ Review/directory sites (Yelp, TripAdvisor, Trustpilot, Google Maps)
-✗ Job boards, financial data, analyst reports
-✗ Any site that does NOT sell products/services in the same category as {domain}
-✗ Any domain you are not confident exists and is correct
+STRICT EXCLUSIONS — do NOT include:
+- The business itself ({domain})
+- Wikipedia, Reddit, Quora, forums, Q&A sites
+- YouTube, TikTok, Instagram, Facebook, any social media
+- News sites, press releases, media publications
+- Directories: Yelp, TripAdvisor, Google Maps, Yellow Pages, Trustpilot
+- Job boards, analyst reports, financial data sites
+- Brands that do NOT actively operate in {country or "the target market"}
 
 OUTPUT RULES:
-- Include ALL genuine competitors you can identify — do not cap the list
-- Prefer country-specific domains (e.g. nz.brand.com, brand.co.nz for NZ market)
-- If unsure whether a site belongs, exclude it
-- Return ONLY a compact single-line JSON array, no explanation, no markdown:
+- Include ALL direct competitors you can identify — do not cap the list
+- Prefer country-specific domains where they exist (e.g. nz.brand.com over brand.com for NZ market)
+- If a SERP list is provided above, all those sites must be in your output
+- Return ONLY a single-line compact JSON array, no explanation, no markdown:
 
 [{{"name":"BrandName","domain":"example.com","website":"https://example.com"}}]"""
 
@@ -424,8 +401,6 @@ OUTPUT RULES:
                     text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
                     competitors = _extract_json_list(text)
                     if competitors is not None:
-                        if len(competitors) == 0:
-                            raise RuntimeError(f"EMPTY_LIST||Gemini returned an empty competitor list. Raw response: {text[:400]}")
                         return competitors
                     last_error = f"{model}/{api_ver} → could not extract JSON list. Raw: {text[:300]}"
                     continue

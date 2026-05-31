@@ -2435,12 +2435,6 @@ if competitors_clicked:
                     elif "INVALID_API_KEY" in err_str or "FORBIDDEN" in err_str or "403" in err_str:
                         st.error("🚫 **Gemini API not enabled** for this key's project.")
                         st.info("Enable the Generative Language API at console.cloud.google.com → APIs & Services.")
-                    elif "EMPTY_LIST||" in err_str:
-                        raw = err_str.split("EMPTY_LIST||", 1)[1]
-                        st.warning("⚠️ **Gemini found no competitors** for this URL + keyword combination.")
-                        st.info("💡 **Tip:** Try a more specific keyword that describes what the business sells — e.g. `mens jeans NZ` instead of `off`. Gemini uses the keyword to understand the market context.")
-                        with st.expander("🔍 Gemini raw response (debug)"):
-                            st.code(raw[:600])
                     elif "ALL_FAILED||" in err_str:
                         detail = err_str.split("ALL_FAILED||", 1)[1]
                         st.error(f"❌ **All Gemini models failed.** {detail}")
@@ -2450,16 +2444,6 @@ if competitors_clicked:
 
             if not gemini_competitors:
                 st.stop()
-
-            # Deduplicate by domain (keep first occurrence)
-            _seen_domains = set()
-            _deduped = []
-            for _c in gemini_competitors:
-                _d = (_c.get("domain") or "").lower().replace("www.", "")
-                if _d and _d not in _seen_domains:
-                    _seen_domains.add(_d)
-                    _deduped.append(_c)
-            gemini_competitors = _deduped
 
             st.success(f"✅ AI identified {len(gemini_competitors)} competitors ({country})")
 
@@ -2513,17 +2497,6 @@ if competitors_clicked:
                     try:
                         row = analyze_venue(comp_url, keyword)
                         row["Role"] = "🎯 Competitor"
-                        # Replace error-page titles with the known competitor name
-                        _blocked_phrases = [
-                            "access to this page has been denied",
-                            "403 forbidden", "404 not found", "just a moment",
-                            "checking your browser", "please enable cookies",
-                            "ddos protection", "attention required",
-                        ]
-                        _vname = row.get("Venue Name", "").lower()
-                        if any(p in _vname for p in _blocked_phrases):
-                            row["Venue Name"] = comp_name
-                            row["Score Band"] = "Blocked"
                         benchmark_rows.append(row)
                     except Exception:
                         benchmark_rows.append({
@@ -2560,10 +2533,8 @@ if competitors_clicked:
         except Exception as e:
             st.error(f"❌ Competitor analysis error: {e}")
 
-# Render stored results when toggle is used, or when a new run failed (no new data stored)
-_just_ran_seo = analyze_clicked and st.session_state.seo_data
-_just_ran_comp = competitors_clicked and st.session_state.comp_data and st.session_state.results_view == "comp"
-if not _just_ran_seo and not _just_ran_comp and not analyze_clicked:
+# Render stored results when toggle is used (no new analysis running)
+if not analyze_clicked and not competitors_clicked:
     if st.session_state.results_view == "seo" and st.session_state.seo_data:
         _render_seo_results(st.session_state.seo_data)
     elif st.session_state.results_view == "comp" and st.session_state.comp_data:
