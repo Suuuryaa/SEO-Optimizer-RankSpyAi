@@ -2445,6 +2445,16 @@ if competitors_clicked:
             if not gemini_competitors:
                 st.stop()
 
+            # Deduplicate by domain (keep first occurrence)
+            _seen_domains = set()
+            _deduped = []
+            for _c in gemini_competitors:
+                _d = (_c.get("domain") or "").lower().replace("www.", "")
+                if _d and _d not in _seen_domains:
+                    _seen_domains.add(_d)
+                    _deduped.append(_c)
+            gemini_competitors = _deduped
+
             st.success(f"✅ AI identified {len(gemini_competitors)} competitors ({country})")
 
             # ── Step 2: Analyze primary venue ───────────────────────────────
@@ -2497,6 +2507,17 @@ if competitors_clicked:
                     try:
                         row = analyze_venue(comp_url, keyword)
                         row["Role"] = "🎯 Competitor"
+                        # Replace error-page titles with the known competitor name
+                        _blocked_phrases = [
+                            "access to this page has been denied",
+                            "403 forbidden", "404 not found", "just a moment",
+                            "checking your browser", "please enable cookies",
+                            "ddos protection", "attention required",
+                        ]
+                        _vname = row.get("Venue Name", "").lower()
+                        if any(p in _vname for p in _blocked_phrases):
+                            row["Venue Name"] = comp_name
+                            row["Score Band"] = "Blocked"
                         benchmark_rows.append(row)
                     except Exception:
                         benchmark_rows.append({
