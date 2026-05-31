@@ -439,7 +439,11 @@ st.markdown("""
 ═══════════════════════════════════════════════ */
 * { font-family: 'Outfit', sans-serif !important; }
 .main > div { padding-top: 0 !important; }
-.block-container { padding: 0 2rem 4rem !important; max-width: 1320px !important; }
+.block-container {
+    padding: 0 4rem 4rem !important;
+    max-width: 1100px !important;
+    margin: 0 auto !important;
+}
 
 /* Full black base + moving grid lines (Webflow aesthetic) */
 .stApp { background: #000000 !important; }
@@ -475,8 +479,8 @@ st.markdown("""
     border: none;
     border-bottom: 1px solid rgba(176,32,37,0.2);
     border-radius: 0;
-    padding: 5rem 3rem 4rem;
-    margin: 0 -2rem 3rem;
+    padding: 4rem 4rem 3rem;
+    margin: 0 -4rem 2rem;
     position: relative; overflow: hidden;
     animation: fadeInUp 0.8s ease-out both;
 }
@@ -813,15 +817,21 @@ hr { border-color: rgba(255,255,255,0.07) !important; margin: 2rem 0 !important;
 ::-webkit-scrollbar-thumb:hover { background: #FF4444; }
 
 /* ═══════════════════════════════════════════════
-   EXPANDER
+   EXPANDER — fix arrow overlap bug
 ═══════════════════════════════════════════════ */
 [data-testid="stExpander"] {
     background: #0a0a0a !important;
     border: 1px solid rgba(255,255,255,0.07) !important;
     border-radius: 12px !important;
+    overflow: hidden !important;
 }
-[data-testid="stExpander"] summary {
-    font-weight: 600 !important; color: rgba(255,255,255,0.6) !important;
+[data-testid="stExpander"] details summary p {
+    font-weight: 600 !important;
+    color: rgba(255,255,255,0.6) !important;
+    font-size: 0.88rem !important;
+}
+[data-testid="stExpander"] details summary svg {
+    fill: rgba(255,255,255,0.4) !important;
 }
 
 /* ═══════════════════════════════════════════════
@@ -836,6 +846,14 @@ hr { border-color: rgba(255,255,255,0.07) !important; margin: 2rem 0 !important;
 
 /* Fade-in for main content */
 .stMainBlockContainer { animation: fadeInUp 0.6s ease-out both; }
+
+/* ── Remove Streamlit default top padding ── */
+header[data-testid="stHeader"] { display: none !important; }
+#root > div:nth-child(1) > div > div > div > div > section > div { padding-top: 0 !important; }
+
+/* ── Tighten vertical gaps ── */
+.stTextInput { margin-bottom: 0.3rem !important; }
+div[data-testid="column"] { padding: 0 0.4rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -859,27 +877,25 @@ st.markdown("""
 
 # ==================== INPUT SECTION ====================
 
-st.markdown("""<div class="input-card"><div class="input-card-title">🔍 Analysis Setup</div></div>""", unsafe_allow_html=True)
+remaining = DAILY_LIMIT - st.session_state.daily_uses
+pct = remaining / DAILY_LIMIT
+bar_color = "#00C853" if pct > 0.5 else "#FFA726" if pct > 0.2 else "#EF5350"
 
-col1, col2 = st.columns([3, 1])
-
-with col1:
-    url = st.text_input("🌐 Website URL", placeholder="https://example.com")
-    keyword = st.text_input("🔑 Target Keyword", placeholder="e.g. running shoes, web design agency")
-
-with col2:
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    remaining = DAILY_LIMIT - st.session_state.daily_uses
-    pct = remaining / DAILY_LIMIT
-    bar_color = "#00C853" if pct > 0.5 else "#FFA726" if pct > 0.2 else "#EF5350"
-    st.markdown(f"""
+st.markdown(f"""
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
+    <span style="font-size:0.65rem;font-weight:800;color:#B02025;letter-spacing:0.18em;text-transform:uppercase;">🔍 Analysis Setup</span>
     <div class="demo-badge">
         <div class="demo-dot"></div>
         Demo &nbsp;·&nbsp; <strong style="color:{bar_color}">{remaining}</strong> left today
-    </div>""", unsafe_allow_html=True)
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+url = st.text_input("🌐 Website URL", placeholder="https://example.com")
+keyword = st.text_input("🔑 Target Keyword", placeholder="e.g. running shoes, web design agency")
 
 # ── Advanced: Compare Specific URLs (collapsible) ────────────────────────────
-with st.expander("🔗 Compare Specific URLs  *(optional — paste competitors you already know)*"):
+with st.expander("🔗 Compare Specific URLs — optional"):
     venue_urls_text = st.text_area(
         "Enter one URL per line",
         height=100,
@@ -887,7 +903,6 @@ with st.expander("🔗 Compare Specific URLs  *(optional — paste competitors y
     )
     compare_url = st.text_input("Or compare against a single URL", placeholder="https://competitor.com")
 
-# keep compare_url / venue_urls_text defined even when expander is collapsed
 if "venue_urls_text" not in dir():
     venue_urls_text = ""
 if "compare_url" not in dir():
