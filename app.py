@@ -2085,7 +2085,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 if "show_own_keys" not in st.session_state:
     st.session_state.show_own_keys = False
 
-_own_keys_label = "— BRING YOUR OWN API KEYS" if st.session_state.show_own_keys else "+ BRING YOUR OWN API KEYS  —  UNLOCK UNLIMITED ACCESS"
+_own_keys_label = "+ BRING YOUR OWN API KEYS" if not st.session_state.show_own_keys else "— CLOSE API KEYS PANEL"
 if st.button(_own_keys_label, key="toggle_own_keys", type="secondary"):
     st.session_state.show_own_keys = not st.session_state.show_own_keys
 
