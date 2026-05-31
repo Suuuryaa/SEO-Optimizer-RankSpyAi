@@ -1974,9 +1974,20 @@ if competitors_clicked:
             location = get_location_from_url(url)
             country = location['country_name'] if location and location.get('country_name') else "global"
 
-            with st.spinner(f"🤖 Asking AI: who are the local competitors of {url} for '{keyword}'?"):
+            # Fetch SERP results to pass as context to Gemini
+            _serp_results = []
+            if serp_key:
                 try:
-                    gemini_competitors = get_competitors_via_gemini(url, keyword, gemini_api_key, location)
+                    from serp_utils import get_serp_results
+                    _serp_results = get_serp_results(keyword, serp_key) or []
+                except Exception:
+                    pass
+
+            with st.spinner(f"🤖 Asking AI: who are the direct competitors of {url} for '{keyword}'?"):
+                try:
+                    gemini_competitors = get_competitors_via_gemini(
+                        url, keyword, gemini_api_key, location, serp_results=_serp_results
+                    )
                 except Exception as e:
                     err_str = str(e)
                     if "QUOTA_429||" in err_str:

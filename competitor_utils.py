@@ -222,17 +222,17 @@ def get_primary_result(results, primary_url=""):
     return None
 
 
-def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None):
+def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None, serp_results=None):
     """
-    Use Gemini REST API directly (bypasses SDK version issues) to identify
-    real competitor brands/domains for a given URL.
+    Use Gemini REST API directly to identify real direct competitor brands.
+    serp_results: optional list of pre-filtered SERP items (direct competitors only).
     Returns a list of dicts: [{"name": "...", "domain": "...", "website": "..."}]
     """
     import requests as _req
 
     domain = _get_domain(url)
 
-    # Infer country from TLD or location object
+    # ── Geography — prefer geolocation data, fall back to TLD ──
     tld = domain.split(".")[-1].lower()
     tld_country_map = {
         "co.nz": "New Zealand", "nz": "New Zealand",
@@ -241,38 +241,82 @@ def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None):
         "ca": "Canada", "ie": "Ireland", "sg": "Singapore",
         "co.in": "India", "in": "India",
     }
-    # Check two-part TLDs first
     two_part = ".".join(domain.split(".")[-2:])
     country = tld_country_map.get(two_part) or tld_country_map.get(tld) or ""
-    if location and location.get("country_name"):
-        country = location["country_name"]
+    city = ""
+    if location:
+        country = location.get("country_name") or country
+        city    = location.get("city") or ""
 
-    country_line = f"Market / Country: {country}" if country else ""
+    geo_line = ""
+    if city and country:
+        geo_line = f"Market: {city}, {country}"
+    elif country:
+        geo_line = f"Market: {country}"
 
-    prompt = f"""You are a competitive intelligence analyst specialising in brand-level SEO competitors.
+    # ── Keyword intent classification ──
+    _informational_signals = ["how", "what", "why", "guide", "tips", "ideas", "best", "top", "review"]
+    _keyword_lower = keyword.lower()
+    _is_informational = any(w in _keyword_lower for w in _informational_signals)
+    intent_note = (
+        "NOTE: The keyword appears informational. Focus on brands whose WEBSITES compete "
+        "for this keyword (e.g. content-heavy brands with blog/resource sections), "
+        "not just transactional e-commerce competitors."
+        if _is_informational else
+        "NOTE: The keyword is commercial/transactional. Focus on brands that sell "
+        "directly to customers and would bid on or rank for this keyword."
+    )
 
-Business website: {url}
-Domain: {domain}
-Target keyword: "{keyword}"
-{country_line}
+    # ── SERP context — filtered direct competitors only ──
+    serp_section = ""
+    if serp_results:
+        filtered = [r for r in serp_results if classify_competitor(
+            r.get("link",""), r.get("title",""), domain
+        ) == "Direct Competitor"][:12]
+        if filtered:
+            serp_lines = "\n".join(
+                f"  {i+1}. {r.get('title','').strip()} — {r.get('link','')}"
+                for i, r in enumerate(filtered)
+            )
+            serp_section = f"""
+GOOGLE SERP — sites currently ranking for "{keyword}" (direct business competitors only, noise already removed):
+{serp_lines}
 
-TASK: Identify ALL DIRECT BRAND competitors you can find (no minimum, no maximum) — real companies that:
-- Sell the same or very similar products/services as this business
-- Compete for the same customers in the same market/country
-- Have their own e-commerce or business website
+These are CONFIRMED ranking competitors — include all of them plus any other known direct competitors you are aware of.
+"""
 
-RULES:
-- Infer the brand name and industry from the domain (e.g. calvinklein.co.nz = Calvin Klein, fashion/apparel, New Zealand)
-- Return competitors that are real brands in the same industry and geography
-- Prefer local/country-specific domains (e.g. nz.tommy.com, hm.com/en_nz) over generic global ones
-- EXCLUDE: Reddit, Quora, Wikipedia, YouTube, news sites, directories (Yelp, TripAdvisor), social media, job boards, analyst sites
-- EXCLUDE: the business itself
-- EXCLUDE: brands that do not actively sell in the target country/market (e.g. UK-only brands for a NZ business)
+    prompt = f"""You are a senior competitive intelligence analyst. Your task is to identify DIRECT BRAND competitors for the business below with maximum accuracy.
 
-EXAMPLES of good competitors for calvinklein.co.nz: Tommy Hilfiger NZ, H&M NZ, Hallensteins, Glassons, Bonds NZ, Kathmandu, Country Road, etc.
+BUSINESS: {url}
+DOMAIN: {domain}
+TARGET KEYWORD: "{keyword}"
+{geo_line}
 
-Return ONLY a compact JSON array on a single line — no explanation, no markdown, no newlines inside the array:
-[{{"name":"Brand","domain":"example.co.nz","website":"https://example.co.nz"}},{{"name":"Brand2","domain":"example.com","website":"https://example.com"}}]"""
+{serp_section}
+{intent_note}
+
+WHAT COUNTS AS A DIRECT COMPETITOR:
+- A real company with its own website that sells the same/very similar products or services
+- Targets the same customers in the same geographic market
+- Would appear on the same search results page for the target keyword
+- Has meaningful market presence (not a one-person blog or hobby site)
+
+STRICT EXCLUSIONS — do NOT include:
+- The business itself ({domain})
+- Wikipedia, Reddit, Quora, forums, Q&A sites
+- YouTube, TikTok, Instagram, Facebook, any social media
+- News sites, press releases, media publications
+- Directories: Yelp, TripAdvisor, Google Maps, Yellow Pages, Trustpilot
+- Job boards, analyst reports, financial data sites
+- Brands that do NOT actively operate in {country or "the target market"}
+
+OUTPUT RULES:
+- Include ALL direct competitors you can identify — do not cap the list
+- Prefer country-specific domains where they exist (e.g. nz.brand.com over brand.com for NZ market)
+- If a SERP list is provided above, all those sites must be in your output
+- Return ONLY a single-line compact JSON array, no explanation, no markdown:
+
+[{{"name":"BrandName","domain":"example.com","website":"https://example.com"}}]"""
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
