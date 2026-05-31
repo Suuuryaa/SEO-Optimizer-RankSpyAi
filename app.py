@@ -1066,7 +1066,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 if "show_own_keys" not in st.session_state:
     st.session_state.show_own_keys = False
 
-_own_keys_label = "— USE YOUR OWN API KEYS  (unlimited)" if st.session_state.show_own_keys else "+ USE YOUR OWN API KEYS  (get unlimited tries)"
+_own_keys_label = "— BRING YOUR OWN API KEYS" if st.session_state.show_own_keys else "+ BRING YOUR OWN API KEYS  —  UNLOCK UNLIMITED ACCESS"
 if st.button(_own_keys_label, key="toggle_own_keys", type="secondary"):
     st.session_state.show_own_keys = not st.session_state.show_own_keys
 
@@ -1103,7 +1103,7 @@ if st.session_state.show_own_keys:
 
     _k3, _k4 = st.columns(2)
     with _k3:
-        _p = st.text_input("PageSpeed API Key  (optional)", type="password",
+        _p = st.text_input("PageSpeed API Key  (optional — Core Web Vitals only)", type="password",
                            value=st.session_state.user_pagespeed_key,
                            placeholder="console.cloud.google.com")
         if _p != st.session_state.user_pagespeed_key:
