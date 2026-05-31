@@ -458,6 +458,7 @@ st.set_page_config(
 # ==================== PREMIUM CSS ====================
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Barlow+Condensed:wght@700;800;900&family=Inter:wght@300;400;500;600&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 /* ═══════════════════════════════════════════════
@@ -512,16 +513,80 @@ st.markdown("""
     0%   { background-position: 0% 50%; }
     100% { background-position: 400% 50%; }
 }
+@keyframes line-sweep {
+    0%   { transform: translateX(-100%) rotate(-25deg); opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { transform: translateX(200%) rotate(-25deg); opacity: 0; }
+}
+@keyframes line-sweep2 {
+    0%   { transform: translateX(-100%) rotate(-15deg); opacity: 0; }
+    10%  { opacity: 0.6; }
+    90%  { opacity: 0.6; }
+    100% { transform: translateX(200%) rotate(-15deg); opacity: 0; }
+}
+@keyframes pulse-glow {
+    0%, 100% { opacity: 0.4; transform: scaleX(1); }
+    50%       { opacity: 1;   transform: scaleX(1.05); }
+}
+@keyframes marquee {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+}
 
 /* ═══════════════════════════════════════════════
    BASE — Pure black like DigitalStrike
 ═══════════════════════════════════════════════ */
-* { font-family: 'Outfit', sans-serif !important; }
+* { font-family: 'Space Grotesk', 'Outfit', sans-serif !important; }
+h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; }
+.stTextInput label, .stTextArea label, .stSelectbox label,
+.section-header, .hero-eyebrow, .input-card-title,
+.kpi-label { font-family: 'Inter', 'Outfit', sans-serif !important; }
 .main > div { padding-top: 0 !important; }
 .block-container {
     padding: 0 2.5rem 4rem !important;
     max-width: 100% !important;
     margin: 0 !important;
+}
+
+/* ── Ticker strip ── */
+.ticker-wrap {
+    width: 100%; overflow: hidden; background: #0a0a0a;
+    border-top: 1px solid rgba(176,32,37,0.15);
+    border-bottom: 1px solid rgba(176,32,37,0.15);
+    padding: 10px 0; margin: 0 -2.5rem;
+}
+.ticker-track {
+    display: flex; gap: 0;
+    width: max-content;
+    animation: marquee 28s linear infinite;
+    white-space: nowrap;
+}
+.ticker-item {
+    font-size: 0.62rem; font-weight: 700; letter-spacing: 0.18em;
+    text-transform: uppercase; color: rgba(255,255,255,0.22);
+    padding: 0 2.5rem;
+}
+.ticker-dot {
+    color: #B02025; margin-right: 2.5rem; opacity: 0.7;
+}
+
+/* ── Hero red lines ── */
+.hero-line {
+    position: absolute; top: 0; left: 0;
+    width: 60%; height: 1px;
+    background: linear-gradient(90deg, transparent, #B02025 40%, #FF4444 60%, transparent);
+    pointer-events: none;
+}
+.hero-line-1 { animation: line-sweep 5s ease-in-out 0s infinite; top: 30%; }
+.hero-line-2 { animation: line-sweep 5s ease-in-out 1.8s infinite; top: 55%; width: 40%;
+               background: linear-gradient(90deg, transparent, rgba(176,32,37,0.5) 50%, transparent); }
+.hero-line-3 { animation: line-sweep2 7s ease-in-out 0.8s infinite; top: 75%; width: 30%;
+               background: linear-gradient(90deg, transparent, rgba(255,68,68,0.3) 50%, transparent); }
+.hero-glow-bar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, #B02025 30%, #FF4444 50%, #B02025 70%, transparent);
+    animation: pulse-glow 3s ease-in-out infinite;
 }
 
 /* Full black base + moving grid lines (Webflow aesthetic) */
@@ -587,9 +652,10 @@ st.markdown("""
     margin-bottom: 1.2rem; animation: fadeInLeft 0.6s 0.1s ease-out both;
 }
 .hero-title {
-    font-size: clamp(2.8rem, 5vw, 4.5rem);
-    font-weight: 900; line-height: 1;
-    letter-spacing: -2px;
+    font-size: clamp(3.2rem, 6vw, 5.5rem);
+    font-family: 'Barlow Condensed', 'Outfit', sans-serif !important;
+    font-weight: 900; line-height: 0.95;
+    letter-spacing: -1px;
     color: #ffffff;
     margin: 0 0 0.4rem;
     animation: fadeInLeft 0.7s 0.2s ease-out both;
@@ -934,6 +1000,16 @@ header[data-testid="stHeader"] { display: none !important; }
 .stTextInput { margin-bottom: 0.3rem !important; }
 div[data-testid="column"] { padding: 0 0.4rem !important; }
 
+/* ── Collapse admin button row gap ── */
+div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"][kind="secondary"]) {
+    margin-top: 0 !important; margin-bottom: 0 !important;
+    min-height: 0 !important;
+}
+/* Zero out the spacer column next to admin button */
+div[data-testid="stHorizontalBlock"] > div:first-child:has(+ div button[key="admin_btn"]) {
+    display: none !important;
+}
+
 /* ── Compare toggle button — small inline style ── */
 button[kind="secondary"][data-testid="baseButton-secondary"]:has-text("COMPARE") {
     width: auto !important;
@@ -956,6 +1032,10 @@ div[data-testid="stButton"]:has(button[key="toggle_compare"]) button {
 
 st.markdown("""
 <div class="hero-header">
+    <div class="hero-line hero-line-1"></div>
+    <div class="hero-line hero-line-2"></div>
+    <div class="hero-line hero-line-3"></div>
+    <div class="hero-glow-bar"></div>
     <div class="hero-eyebrow">AI-Powered SEO Intelligence</div>
     <div class="hero-title">BOLD STRATEGY.<br><span class="hero-title-accent">STRIKING RESULTS.</span></div>
     <p class="hero-sub">Analyze, benchmark, and outrank your competitors — powered by AI, driven by data.</p>
@@ -966,6 +1046,31 @@ st.markdown("""
         <span class="hero-badge">AI-Powered Insights</span>
         <span class="hero-badge">Enterprise-Grade Analysis</span>
         <span class="hero-badge">Strategic Action Plans</span>
+    </div>
+</div>
+
+<div class="ticker-wrap">
+    <div class="ticker-track">
+        <span class="ticker-item">SEO Analysis</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Competitor Intelligence</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Technical Audit</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Keyword Strategy</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">AI-Powered Insights</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">SERP Benchmarking</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Content Scoring</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Schema Markup</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Core Web Vitals</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Backlink Analysis</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">SEO Analysis</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Competitor Intelligence</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Technical Audit</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Keyword Strategy</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">AI-Powered Insights</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">SERP Benchmarking</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Content Scoring</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Schema Markup</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Core Web Vitals</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">Backlink Analysis</span><span class="ticker-dot">✦</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
