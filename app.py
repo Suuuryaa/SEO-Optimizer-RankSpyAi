@@ -95,6 +95,22 @@ def _get_global_uses():
 def _increment_global_uses():
     return _redis_incr(_GLOBAL_KEY)
 
+def _using_own_keys():
+    return bool(st.session_state.user_serper_key and st.session_state.user_gemini_key)
+
+def _active_keys():
+    """Return (serp, gemini, pagespeed, scraperapi) keys to use."""
+    if st.session_state.is_admin:
+        return (_default_serper, _default_gemini, _default_pagespeed, "")
+    if _using_own_keys():
+        return (
+            st.session_state.user_serper_key,
+            st.session_state.user_gemini_key,
+            st.session_state.user_pagespeed_key or _default_pagespeed,
+            st.session_state.user_scraperapi_key,
+        )
+    return (_default_serper, _default_gemini, _default_pagespeed, "")
+
 def _check_limit():
     """Return (allowed, remaining). Admins and own-key users always allowed."""
     if st.session_state.is_admin or _using_own_keys():
@@ -102,6 +118,33 @@ def _check_limit():
     used = _get_global_uses()
     remaining = max(0, GLOBAL_LIMIT - used)
     return remaining > 0, remaining
+
+# ==================== ADMIN MODE ====================
+_admin_password = ""
+try:
+    _admin_password = st.secrets["ADMIN_PASSWORD"]
+except Exception:
+    pass
+
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
+if "show_admin_login" not in st.session_state:
+    st.session_state.show_admin_login = False
+if "seo_data" not in st.session_state:
+    st.session_state.seo_data = None
+if "comp_data" not in st.session_state:
+    st.session_state.comp_data = None
+if "results_view" not in st.session_state:
+    st.session_state.results_view = "seo"
+
+if "user_serper_key" not in st.session_state:
+    st.session_state.user_serper_key = ""
+if "user_gemini_key" not in st.session_state:
+    st.session_state.user_gemini_key = ""
+if "user_pagespeed_key" not in st.session_state:
+    st.session_state.user_pagespeed_key = ""
+if "user_scraperapi_key" not in st.session_state:
+    st.session_state.user_scraperapi_key = ""
 
 # Active keys for this session
 serp_key, gemini_api_key, pagespeed_api_key, _scraperapi_key = _active_keys()
