@@ -235,10 +235,10 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
         except Exception:
             pass
 
-    # Fallback list if discovery fails
+    # Fallback list if discovery fails (gemini-pro bare alias excluded — requires OAuth on v1)
     if not available_models:
-        available_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro",
-                           "gemini-1.0-pro", "gemini-pro"]
+        available_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b",
+                           "gemini-1.5-pro", "gemini-1.0-pro"]
 
     last_error = None
     for model in available_models[:5]:
@@ -251,6 +251,9 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
                 resp = _req.post(endpoint, json=payload, timeout=30)
                 if resp.status_code == 429:
                     raise RuntimeError("SPENDING_CAP_429")
+                if resp.status_code == 401:
+                    last_error = f"{model}/{api_ver} → 401 (invalid API key — check GEMINI_API_KEY in Streamlit secrets)"
+                    break  # 401 means bad key, no point retrying other API versions
                 if resp.status_code == 200:
                     data = resp.json()
                     text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -274,4 +277,6 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
             except Exception as e:
                 last_error = f"{model}/{api_ver} → {e}"
 
-    raise RuntimeError(f"All Gemini endpoints failed. Available models tried: {available_models[:5]}. Last error: {last_error}")
+    if last_error and "401" in str(last_error):
+        raise RuntimeError(f"Gemini API key invalid (401). Check that GEMINI_API_KEY is correctly set in Streamlit secrets. Last error: {last_error}")
+    raise RuntimeError(f"All Gemini endpoints failed. Models tried: {available_models[:5]}. Last error: {last_error}")

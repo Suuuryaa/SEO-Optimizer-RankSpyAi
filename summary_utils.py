@@ -90,7 +90,7 @@ Write:
                    "generationConfig": {"temperature": 0.4, "maxOutputTokens": 1024}}
 
         # Discover available models
-        models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]
+        models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro", "gemini-1.0-pro"]
         for api_ver in ["v1beta", "v1"]:
             try:
                 r = _req.get(f"https://generativelanguage.googleapis.com/{api_ver}/models?key={gemini_api_key}", timeout=10)

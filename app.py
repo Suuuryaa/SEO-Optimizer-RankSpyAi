@@ -2,9 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import serp_utils
 import time
-from datetime import datetime
 from datetime import datetime, date
 import os
 
@@ -378,50 +376,259 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS
+# ==================== PREMIUM CSS ====================
 st.markdown("""
 <style>
-    .main > div { padding-top: 1.5rem; }
-    .stButton>button {
-        width: 100%; border-radius: 8px; height: 3em; font-weight: 600;
-    }
-    h1 {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        font-size: 2.8em; font-weight: 800;
-    }
-    .stTabs [data-baseweb="tab-list"] { gap: 6px; }
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px 8px 0 0; padding: 10px 18px; font-weight: 600;
-    }
-    .kpi-card {
-        background: rgba(255,255,255,0.05);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 12px;
-        padding: 1.2rem 1rem;
-        text-align: center;
-        transition: transform 0.2s;
-    }
-    .kpi-card:hover { transform: translateY(-2px); }
-    .kpi-value { font-size: 2rem; font-weight: 800; margin: 0.3rem 0; }
-    .kpi-label { font-size: 0.78rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; }
-    .kpi-delta { font-size: 0.85rem; font-weight: 600; }
-    .section-header {
-        font-size: 0.85rem; font-weight: 700; letter-spacing: 0.08em;
-        text-transform: uppercase; opacity: 0.6; margin-bottom: 0.5rem;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+/* ── Base ── */
+* { font-family: 'Inter', sans-serif !important; }
+.main > div { padding-top: 0.5rem; }
+.block-container { padding: 1.5rem 2rem 3rem; max-width: 1400px; }
+
+/* ── Hero Header ── */
+.hero-header {
+    background: linear-gradient(135deg, #0f0c29 0%, #1a1040 40%, #0d1b2a 100%);
+    border: 1px solid rgba(102,126,234,0.25);
+    border-radius: 20px;
+    padding: 2.5rem 2.5rem 2rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+}
+.hero-header::before {
+    content: '';
+    position: absolute; top: -60px; right: -60px;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(102,126,234,0.15) 0%, transparent 70%);
+    border-radius: 50%;
+}
+.hero-header::after {
+    content: '';
+    position: absolute; bottom: -40px; left: 30%;
+    width: 200px; height: 200px;
+    background: radial-gradient(circle, rgba(118,75,162,0.12) 0%, transparent 70%);
+    border-radius: 50%;
+}
+.hero-title {
+    font-size: 2.8rem; font-weight: 900; line-height: 1.1;
+    background: linear-gradient(135deg, #a78bfa 0%, #667eea 40%, #38bdf8 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; margin: 0 0 0.5rem;
+}
+.hero-sub {
+    font-size: 1rem; color: rgba(255,255,255,0.55); font-weight: 400;
+    letter-spacing: 0.01em; margin: 0;
+}
+.hero-badges {
+    display: flex; gap: 0.6rem; margin-top: 1.2rem; flex-wrap: wrap;
+}
+.hero-badge {
+    background: rgba(102,126,234,0.15);
+    border: 1px solid rgba(102,126,234,0.3);
+    color: #a78bfa; padding: 4px 12px;
+    border-radius: 20px; font-size: 0.75rem; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+}
+
+/* ── Input Card ── */
+.input-card {
+    background: linear-gradient(135deg, rgba(15,12,41,0.8) 0%, rgba(26,16,64,0.6) 100%);
+    border: 1px solid rgba(102,126,234,0.2);
+    border-radius: 16px; padding: 1.5rem 1.5rem 1rem;
+    margin-bottom: 1rem;
+    backdrop-filter: blur(10px);
+}
+.input-card-title {
+    font-size: 0.7rem; font-weight: 700; color: rgba(167,139,250,0.8);
+    text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.8rem;
+}
+
+/* ── Streamlit Inputs Override ── */
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(102,126,234,0.25) !important;
+    border-radius: 10px !important;
+    color: #f0f4ff !important;
+    font-size: 0.95rem !important;
+    transition: border-color 0.2s !important;
+}
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {
+    border-color: rgba(102,126,234,0.6) !important;
+    box-shadow: 0 0 0 3px rgba(102,126,234,0.1) !important;
+}
+.stTextInput label, .stTextArea label {
+    font-size: 0.82rem !important; font-weight: 600 !important;
+    color: rgba(200,210,255,0.7) !important; letter-spacing: 0.02em !important;
+}
+
+/* ── Buttons ── */
+.stButton > button {
+    width: 100%; border-radius: 12px; height: 3.2em;
+    font-weight: 700; font-size: 0.95rem;
+    letter-spacing: 0.02em; transition: all 0.25s ease;
+    border: none !important;
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important; box-shadow: 0 4px 20px rgba(102,126,234,0.4) !important;
+}
+.stButton > button[kind="primary"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(102,126,234,0.55) !important;
+}
+.stButton > button[kind="secondary"] {
+    background: rgba(255,255,255,0.06) !important;
+    border: 1.5px solid rgba(102,126,234,0.35) !important;
+    color: #a78bfa !important;
+}
+.stButton > button[kind="secondary"]:hover {
+    background: rgba(102,126,234,0.15) !important;
+    border-color: rgba(102,126,234,0.6) !important;
+    transform: translateY(-1px);
+}
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 4px; background: rgba(255,255,255,0.03);
+    border-radius: 12px; padding: 4px;
+    border: 1px solid rgba(255,255,255,0.07);
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 9px; padding: 9px 18px; font-weight: 600;
+    font-size: 0.85rem; color: rgba(255,255,255,0.5) !important;
+    background: transparent !important; border: none !important;
+    transition: all 0.2s;
+}
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(135deg, rgba(102,126,234,0.3) 0%, rgba(118,75,162,0.3) 100%) !important;
+    color: #c4b5fd !important;
+}
+
+/* ── KPI Cards ── */
+.kpi-card {
+    background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(102,126,234,0.06) 100%);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 14px; padding: 1.3rem 1rem;
+    text-align: center; transition: all 0.25s ease;
+    position: relative; overflow: hidden;
+}
+.kpi-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(102,126,234,0.5), transparent);
+}
+.kpi-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(102,126,234,0.25);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+}
+.kpi-value { font-size: 2.1rem; font-weight: 800; margin: 0.3rem 0; line-height: 1; }
+.kpi-label {
+    font-size: 0.72rem; opacity: 0.6; text-transform: uppercase;
+    letter-spacing: 0.06em; font-weight: 600;
+}
+.kpi-delta { font-size: 0.82rem; font-weight: 600; margin-top: 0.25rem; }
+
+/* ── Section Headers ── */
+.section-header {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: rgba(167,139,250,0.7);
+    margin-bottom: 0.75rem; padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(102,126,234,0.15);
+}
+
+/* ── Info/Warning/Error boxes ── */
+.stAlert { border-radius: 12px !important; border-left-width: 3px !important; }
+
+/* ── Metrics ── */
+[data-testid="metric-container"] {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 0.8rem 1rem;
+}
+
+/* ── DataFrames ── */
+.stDataFrame { border-radius: 12px; overflow: hidden; }
+.stDataFrame thead th {
+    background: rgba(102,126,234,0.15) !important;
+    font-weight: 700 !important; font-size: 0.8rem !important;
+    text-transform: uppercase !important; letter-spacing: 0.04em !important;
+}
+
+/* ── Expanders ── */
+.streamlit-expanderHeader {
+    border-radius: 10px !important;
+    background: rgba(255,255,255,0.03) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    font-weight: 600 !important;
+}
+
+/* ── Progress ── */
+.stProgress > div > div > div { border-radius: 10px !important; }
+.stProgress > div > div {
+    background: rgba(255,255,255,0.06) !important; border-radius: 10px !important;
+}
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0f0c29 0%, #1a1040 100%) !important;
+}
+
+/* ── Divider ── */
+hr { border-color: rgba(102,126,234,0.15) !important; margin: 1.5rem 0 !important; }
+
+/* ── Demo badge ── */
+.demo-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: linear-gradient(135deg, rgba(102,126,234,0.12), rgba(118,75,162,0.12));
+    border: 1px solid rgba(102,126,234,0.25);
+    border-radius: 10px; padding: 0.6rem 1rem;
+    font-size: 0.85rem; color: #a78bfa; font-weight: 500;
+}
+.demo-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #667eea;
+    box-shadow: 0 0 6px #667eea;
+    animation: pulse-dot 2s infinite;
+}
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+/* ── Spinner ── */
+.stSpinner > div { border-top-color: #667eea !important; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+::-webkit-scrollbar-thumb { background: rgba(102,126,234,0.3); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(102,126,234,0.5); }
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== HEADER ====================
+# ==================== HERO HEADER ====================
 
-st.title("🎯 SEO Intelligence Dashboard")
-st.markdown("**Analyze, benchmark, and optimize your website's search performance**")
-st.markdown("---")
+st.markdown("""
+<div class="hero-header">
+    <div class="hero-title">SEO Intelligence Dashboard</div>
+    <p class="hero-sub">Analyze, benchmark, and optimize your website's search performance with AI</p>
+    <div class="hero-badges">
+        <span class="hero-badge">⚡ Real-time Analysis</span>
+        <span class="hero-badge">🤖 AI Competitor Intel</span>
+        <span class="hero-badge">📊 Core Web Vitals</span>
+        <span class="hero-badge">🌍 GEO Score</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # ==================== INPUT SECTION ====================
 
-col1, col2 = st.columns(2)
+st.markdown("""<div class="input-card"><div class="input-card-title">🔍 Analysis Setup</div></div>""", unsafe_allow_html=True)
+
+col1, col2 = st.columns([3, 2])
 
 with col1:
     url = st.text_input("🌐 Primary Venue URL", placeholder="https://example.com")
@@ -429,30 +636,37 @@ with col1:
 
 with col2:
     compare_url = st.text_input("📊 Comparison URL (optional)", placeholder="https://competitor.com")
+    st.markdown("<br>", unsafe_allow_html=True)
+    remaining = DAILY_LIMIT - st.session_state.daily_uses
+    pct = remaining / DAILY_LIMIT
+    bar_color = "#00C853" if pct > 0.5 else "#FFA726" if pct > 0.2 else "#EF5350"
+    st.markdown(f"""
+    <div class="demo-badge">
+        <div class="demo-dot"></div>
+        Demo mode &nbsp;·&nbsp; <strong style="color:{bar_color}">{remaining}</strong> analyses remaining today
+    </div>""", unsafe_allow_html=True)
 
-# Show usage info instead of API configuration
-st.info(f"💡 Demo mode: {DAILY_LIMIT - st.session_state.daily_uses} analyses remaining today")
+st.markdown("<br>", unsafe_allow_html=True)
 
-st.markdown("### 🏆 Multi-Venue Leaderboard")
-venue_urls_text = st.text_area(
-    "Enter multiple venue URLs (one per line)",
-    height=100,
-    placeholder="https://venue1.com\nhttps://venue2.com\nhttps://venue3.com"
-)
+with st.expander("🏆 Multi-Venue Leaderboard — enter multiple URLs to compare", expanded=False):
+    venue_urls_text = st.text_area(
+        "One URL per line",
+        height=100,
+        placeholder="https://venue1.com\nhttps://venue2.com\nhttps://venue3.com",
+        label_visibility="collapsed"
+    )
 
 st.markdown("---")
 
-# Action Buttons
-col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 3])
+# ==================== ACTION BUTTONS ====================
+
+col_btn1, col_btn2, col_spacer = st.columns([2, 2, 3])
 
 with col_btn1:
     analyze_clicked = st.button("🔍 Analyze SEO", use_container_width=True, type="primary")
 
 with col_btn2:
-    competitors_clicked = st.button("🎯 Find Competitors", use_container_width=True)
-
-# ==================== ANALYZE SECTION ====================
-
+    competitors_clicked = st.button("🎯 Find Competitors", use_container_width=True, type="secondary")
 
 # ==================== ANALYZE SECTION ====================
 
@@ -1025,7 +1239,9 @@ if competitors_clicked:
                 except Exception as e:
                     err_str = str(e)
                     if "429" in err_str or "spending cap" in err_str or "quota" in err_str.lower():
-                        st.error("💳 Gemini API spending cap reached. Go to [aistudio.google.com/spend](https://aistudio.google.com/spend) to increase your limit.")
+                        st.error("💳 **Gemini spending cap reached.** Go to [aistudio.google.com/spend](https://aistudio.google.com/spend) to increase your monthly limit.")
+                    elif "401" in err_str or "invalid API key" in err_str.lower():
+                        st.error("🔑 **Gemini API key invalid or not set.** Check that `GEMINI_API_KEY` is correctly configured in your Streamlit Cloud secrets.")
                     else:
                         st.error(f"❌ Gemini failed: {e}")
                     gemini_competitors = []
