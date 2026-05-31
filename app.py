@@ -2435,6 +2435,12 @@ if competitors_clicked:
                     elif "INVALID_API_KEY" in err_str or "FORBIDDEN" in err_str or "403" in err_str:
                         st.error("🚫 **Gemini API not enabled** for this key's project.")
                         st.info("Enable the Generative Language API at console.cloud.google.com → APIs & Services.")
+                    elif "EMPTY_LIST||" in err_str:
+                        raw = err_str.split("EMPTY_LIST||", 1)[1]
+                        st.warning("⚠️ **Gemini found no competitors** for this URL + keyword combination.")
+                        st.info("💡 **Tip:** Try a more specific keyword that describes what the business sells — e.g. `mens jeans NZ` instead of `off`. Gemini uses the keyword to understand the market context.")
+                        with st.expander("🔍 Gemini raw response (debug)"):
+                            st.code(raw[:600])
                     elif "ALL_FAILED||" in err_str:
                         detail = err_str.split("ALL_FAILED||", 1)[1]
                         st.error(f"❌ **All Gemini models failed.** {detail}")
@@ -2443,7 +2449,6 @@ if competitors_clicked:
                     gemini_competitors = []
 
             if not gemini_competitors:
-                st.error("❌ No competitors identified. Please try again or check your API key.")
                 st.stop()
 
             # Deduplicate by domain (keep first occurrence)

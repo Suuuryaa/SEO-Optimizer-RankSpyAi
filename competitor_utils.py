@@ -424,6 +424,8 @@ OUTPUT RULES:
                     text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
                     competitors = _extract_json_list(text)
                     if competitors is not None:
+                        if len(competitors) == 0:
+                            raise RuntimeError(f"EMPTY_LIST||Gemini returned an empty competitor list. Raw response: {text[:400]}")
                         return competitors
                     last_error = f"{model}/{api_ver} → could not extract JSON list. Raw: {text[:300]}"
                     continue
