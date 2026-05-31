@@ -10,37 +10,87 @@ import json
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import Scrapling — try local Scrapling-main first, then fall back to PyPI install
+# ── Scrapling setup ──────────────────────────────────────────────────────────
+# Prefer local Scrapling-main/ (user's downloaded copy), fall back to PyPI
 import os as _os, sys as _sys
-_scrapling_local = _os.path.join(_os.path.dirname(__file__), "Scrapling-main")
+_scrapling_local = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "Scrapling-main")
 if _os.path.isdir(_scrapling_local) and _scrapling_local not in _sys.path:
     _sys.path.insert(0, _scrapling_local)
 
+_SCRAPLING_AVAILABLE = False
+_STEALTHY_AVAILABLE = False
+
 try:
-    from scrapling.fetchers import Fetcher as _ScraplingFetcher
+    from scrapling.fetchers import Fetcher as _Fetcher
     _SCRAPLING_AVAILABLE = True
-except Exception:
-    _SCRAPLING_AVAILABLE = False
+    logger.info("Scrapling Fetcher (curl_cffi) loaded")
+except Exception as _e:
+    logger.warning(f"Scrapling Fetcher unavailable: {_e}")
+
+try:
+    from scrapling.fetchers import StealthyFetcher as _StealthyFetcher
+    _STEALTHY_AVAILABLE = True
+    logger.info("Scrapling StealthyFetcher (Playwright) loaded")
+except Exception as _e:
+    logger.warning(f"Scrapling StealthyFetcher unavailable: {_e}")
 
 
-def _scrapling_fetch(url):
-    """Use Scrapling (curl_cffi TLS impersonation) to bypass Cloudflare/bot walls."""
-    resp = _ScraplingFetcher.get(url, timeout=30, stealthy_headers=True)
+# Minimum HTML size — anything smaller is a JS shell with no real content
+_MIN_HTML_BYTES = 500
+
+
+def _html_from_scrapling_response(resp):
+    """Extract HTML string from a Scrapling Response object."""
+    html = resp.html_content
+    if isinstance(html, bytes):
+        html = html.decode(resp.encoding or "utf-8", errors="replace")
+    return str(html)
+
+
+def _fetch_with_fetcher(url):
+    """Tier 2: curl_cffi TLS fingerprint impersonation — bypasses Cloudflare 403s."""
+    resp = _Fetcher.get(
+        url,
+        timeout=25,
+        stealthy_headers=True,   # Auto-generate real browser headers
+        follow_redirects=True,
+    )
     if resp.status not in (200, 206):
-        raise Exception(f"Scrapling got HTTP {resp.status} from {url}")
-    html = resp.html_content  # Scrapling Response uses .html_content not .content
-    if not html or len(html) < 200:
-        raise Exception(f"Scrapling returned near-empty page ({len(html or '')} chars) — site may be JS-only")
+        raise Exception(f"Fetcher got HTTP {resp.status}")
+    html = _html_from_scrapling_response(resp)
+    if len(html) < _MIN_HTML_BYTES:
+        raise Exception(f"Fetcher returned near-empty page ({len(html)} chars) — JS-only SPA")
     return BeautifulSoup(html, "lxml"), html
 
 
-@retry(
-    stop=stop_after_attempt(2),
-    wait=wait_exponential(multiplier=1, min=2, max=6),
-    reraise=True
-)
+def _fetch_with_stealthy(url):
+    """Tier 3: Playwright + Patchright headless browser — handles JS SPAs + Cloudflare Turnstile."""
+    resp = _StealthyFetcher.fetch(
+        url,
+        headless=True,
+        network_idle=True,       # Wait until JS finishes loading content
+        timeout=45000,           # 45s — JS sites are slow
+        solve_cloudflare=True,   # Auto-solve Cloudflare Turnstile challenges
+        disable_resources=True,  # Skip images/fonts/css for speed
+        block_ads=True,
+        google_search=True,      # Set Google referer (looks more natural)
+    )
+    if resp.status not in (200, 206):
+        raise Exception(f"StealthyFetcher got HTTP {resp.status}")
+    html = _html_from_scrapling_response(resp)
+    if len(html) < _MIN_HTML_BYTES:
+        raise Exception(f"StealthyFetcher returned near-empty page ({len(html)} chars)")
+    return BeautifulSoup(html, "lxml"), html
+
+
 def get_page_soup(url):
-    """Fetch page with plain requests; fall back to Scrapling (curl_cffi) if blocked."""
+    """
+    3-tier fetch strategy:
+    1. Plain requests (fastest, works for ~70% of sites)
+    2. Scrapling Fetcher / curl_cffi (TLS impersonation, bypasses most 403s)
+    3. Scrapling StealthyFetcher / Playwright (full browser, JS SPAs + Cloudflare)
+    """
+    # ── Tier 1: plain requests ──────────────────────────────────────────────
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -53,34 +103,58 @@ def get_page_soup(url):
         "Sec-Fetch-Site": "none",
     }
 
+    tier1_blocked = False
     try:
         resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
-        # Treat 403/429/503 as blocked — try Scrapling fallback
-        if resp.status_code in (403, 429, 503) and _SCRAPLING_AVAILABLE:
-            logger.info(f"Got {resp.status_code} from {url}, retrying with Scrapling")
-            return _scrapling_fetch(url)
-        resp.raise_for_status()
-        return BeautifulSoup(resp.text, "lxml"), resp.text
-
+        if resp.status_code in (403, 429, 503):
+            tier1_blocked = True
+            logger.info(f"Tier1 got {resp.status_code} from {url} — escalating to Fetcher")
+        else:
+            resp.raise_for_status()
+            html = resp.text
+            if len(html) >= _MIN_HTML_BYTES:
+                return BeautifulSoup(html, "lxml"), html
+            # Too small — may need JS render
+            tier1_blocked = True
+            logger.info(f"Tier1 got thin page ({len(html)} chars) — escalating to Fetcher")
     except requests.exceptions.Timeout:
-        raise requests.exceptions.Timeout(f"Timed out fetching {url}.")
+        tier1_blocked = True
+        logger.info(f"Tier1 timeout for {url} — escalating to Fetcher")
     except requests.exceptions.HTTPError as e:
-        code = e.response.status_code if e.response is not None else "?"
-        # Try Scrapling for any HTTP error if available
-        if _SCRAPLING_AVAILABLE:
-            logger.info(f"HTTP {code} from {url}, trying Scrapling fallback")
-            try:
-                return _scrapling_fetch(url)
-            except Exception as se:
-                raise Exception(f"Blocked ({code}): {url} — even stealth fetch failed: {se}")
-        raise Exception(f"HTTP {code} from {url} — site blocks automated access.")
+        tier1_blocked = True
+        logger.info(f"Tier1 HTTP error for {url}: {e} — escalating to Fetcher")
     except requests.RequestException as e:
-        if _SCRAPLING_AVAILABLE:
-            try:
-                return _scrapling_fetch(url)
-            except Exception:
-                pass
-        raise
+        tier1_blocked = True
+        logger.info(f"Tier1 request error for {url}: {e} — escalating to Fetcher")
+
+    if not tier1_blocked:
+        return BeautifulSoup("", "lxml"), ""
+
+    # ── Tier 2: Scrapling Fetcher (curl_cffi) ───────────────────────────────
+    if _SCRAPLING_AVAILABLE:
+        try:
+            logger.info(f"Tier2 Fetcher fetching {url}")
+            return _fetch_with_fetcher(url)
+        except Exception as e:
+            logger.info(f"Tier2 Fetcher failed for {url}: {e} — escalating to StealthyFetcher")
+
+    # ── Tier 3: StealthyFetcher (Playwright headless + Cloudflare solver) ───
+    if _STEALTHY_AVAILABLE:
+        try:
+            logger.info(f"Tier3 StealthyFetcher fetching {url}")
+            return _fetch_with_stealthy(url)
+        except Exception as e:
+            raise Exception(f"All 3 fetch tiers failed for {url}. Last error: {e}")
+
+    raise Exception(f"Could not fetch {url} — site blocks automated access and no stealth fetcher available.")
+
+
+# Keep tenacity retry on top for transient network errors
+get_page_soup = retry(
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=2, max=6),
+    reraise=True
+)(get_page_soup)
 
 
 def get_title(soup):

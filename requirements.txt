@@ -10,4 +10,6 @@ tenacity>=8.2.3
 textstat>=0.7.3
 scrapling>=0.4.8
 curl-cffi>=0.7.0
-browserforge>=1.0.0
+browserforge>=1.2.4
+playwright==1.59.0
+patchright==1.59.1
