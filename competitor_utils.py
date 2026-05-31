@@ -280,22 +280,18 @@ def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None, serp
         "directly to customers and would bid on or rank for this keyword."
     )
 
-    # ── SERP context — filtered direct competitors only ──
+    # ── SERP context — all results, Gemini decides what's relevant ──
     serp_section = ""
     if serp_results:
-        filtered = [r for r in serp_results if classify_competitor(
-            r.get("link",""), r.get("title",""), domain
-        ) == "Direct Competitor"][:12]
-        if filtered:
-            serp_lines = "\n".join(
-                f"  {i+1}. {r.get('title','').strip()} — {r.get('link','')}"
-                for i, r in enumerate(filtered)
-            )
-            serp_section = f"""
-GOOGLE SERP — sites currently ranking for "{keyword}" (direct business competitors only, noise already removed):
+        serp_lines = "\n".join(
+            f"  {i+1}. {r.get('title','').strip()} — {r.get('link','')}"
+            for i, r in enumerate(serp_results[:15])
+        )
+        serp_section = f"""
+GOOGLE SERP — raw results currently ranking for "{keyword}":
 {serp_lines}
 
-Use these as hints — include any that are genuine direct business competitors, but SKIP any that are dictionaries, gaming platforms, entertainment sites, or non-business pages even if they appear here.
+Review these results. Include any that are genuine direct business competitors of {domain}. Ignore dictionaries, forums, social media, gaming sites, news articles, and any non-business pages.
 """
 
     prompt = f"""You are a senior competitive intelligence analyst. Your task is to identify DIRECT BRAND competitors for the business below with maximum accuracy.
