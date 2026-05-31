@@ -246,12 +246,20 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
         except Exception:
             pass
 
-    # Fallback list if discovery network-fails (gemini-pro excluded — needs OAuth on v1)
+    # Fallback list if discovery network-fails (gemini-pro bare alias excluded — needs OAuth on v1)
     if not available_models:
-        available_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b",
-                           "gemini-1.5-pro", "gemini-1.0-pro"]
+        available_models = [
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b",
+            "gemini-1.5-pro",
+            "gemini-1.0-pro",
+        ]
 
     last_error = None
+    quota_errors = []
+
     for model in available_models[:5]:
         for api_ver in ["v1beta", "v1"]:
             endpoint = (
@@ -262,14 +270,16 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
                 resp = _req.post(endpoint, json=payload, timeout=30)
 
                 if resp.status_code == 429:
-                    # Surface the exact Google error so it can be diagnosed
-                    raw = resp.text
-                    raise RuntimeError(f"QUOTA_429||{raw[:500]}")
+                    # Don't give up — record the error and try the next model
+                    quota_errors.append(f"{model}/{api_ver}: {resp.text[:200]}")
+                    last_error = f"QUOTA_429||{resp.text[:400]}"
+                    break  # break inner (api_ver) loop, try next model
 
                 if resp.status_code in (401, 403):
-                    code = resp.status_code
+                    # Key-level failure — no point trying more models
                     raise RuntimeError(
-                        f"INVALID_API_KEY_{code}||Gemini key rejected ({code}): {resp.text[:200]}"
+                        f"INVALID_API_KEY_{resp.status_code}||"
+                        f"Gemini key rejected ({resp.status_code}): {resp.text[:200]}"
                     )
 
                 if resp.status_code == 200:
@@ -294,4 +304,7 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
             except Exception as e:
                 last_error = f"{model}/{api_ver} → {e}"
 
+    # All models exhausted — raise with the most useful error
+    if last_error and last_error.startswith("QUOTA_429||"):
+        raise RuntimeError(last_error)
     raise RuntimeError(f"ALL_FAILED||Models tried: {available_models[:5]}. Last error: {last_error}")
