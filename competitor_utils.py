@@ -294,9 +294,9 @@ GOOGLE SERP — raw results currently ranking for "{keyword}":
 Review these results. Include any that are genuine direct business competitors of {domain}. Ignore dictionaries, forums, social media, gaming sites, news articles, and any non-business pages.
 """
 
-    prompt = f"""You are a senior competitive intelligence analyst. Your task is to identify DIRECT BRAND competitors for the business below with maximum accuracy.
+    prompt = f"""You are a senior competitive intelligence analyst. Identify DIRECT competitors for the business below.
 
-BUSINESS: {url}
+BUSINESS URL: {url}
 DOMAIN: {domain}
 TARGET KEYWORD: "{keyword}"
 {geo_line}
@@ -304,26 +304,34 @@ TARGET KEYWORD: "{keyword}"
 {serp_section}
 {intent_note}
 
-WHAT COUNTS AS A DIRECT COMPETITOR:
-- A real company with its own website that sells the same/very similar products or services
-- Targets the same customers in the same geographic market
-- Would appear on the same search results page for the target keyword
-- Has meaningful market presence (not a one-person blog or hobby site)
+STEP 1 — Understand the business:
+Look at {domain} and determine: what industry/category is this business in? What does it sell or offer?
+Use this to anchor your competitor search — only return brands in the SAME industry.
 
-STRICT EXCLUSIONS — do NOT include:
-- The business itself ({domain})
-- Wikipedia, Reddit, Quora, forums, Q&A sites
-- YouTube, TikTok, Instagram, Facebook, any social media
-- News sites, press releases, media publications
-- Directories: Yelp, TripAdvisor, Google Maps, Yellow Pages, Trustpilot
-- Job boards, analyst reports, financial data sites
-- Brands that do NOT actively operate in {country or "the target market"}
+STEP 2 — A site qualifies as a DIRECT COMPETITOR only if ALL of these are true:
+✓ It is a real company with its own website (not a platform, directory, or aggregator)
+✓ It sells the same or very similar products/services as {domain}
+✓ It targets the same type of customer in the same geographic market
+✓ It has a working, indexable website with meaningful content
+✓ You are confident the domain is correct and the site is live
+
+STEP 3 — HARD EXCLUSIONS — reject immediately, no exceptions:
+✗ {domain} itself
+✗ Dictionaries, encyclopedias (Wikipedia, Merriam-Webster, Cambridge Dictionary, etc.)
+✗ Forums, Q&A, Reddit, Quora
+✗ Social media (Facebook, Instagram, TikTok, LinkedIn, Pinterest, YouTube)
+✗ Gaming platforms (Steam, Epic Games, etc.)
+✗ News, media, press release sites
+✗ Review/directory sites (Yelp, TripAdvisor, Trustpilot, Google Maps)
+✗ Job boards, financial data, analyst reports
+✗ Any site that does NOT sell products/services in the same category as {domain}
+✗ Any domain you are not confident exists and is correct
 
 OUTPUT RULES:
-- Include ALL direct competitors you can identify — do not cap the list
-- Prefer country-specific domains where they exist (e.g. nz.brand.com over brand.com for NZ market)
-- If a SERP list is provided above, all those sites must be in your output
-- Return ONLY a single-line compact JSON array, no explanation, no markdown:
+- Aim for 6–12 genuine competitors; fewer is better than including noise
+- Prefer country-specific domains (e.g. nz.brand.com, brand.co.nz for NZ market)
+- If unsure whether a site belongs, exclude it
+- Return ONLY a compact single-line JSON array, no explanation, no markdown:
 
 [{{"name":"BrandName","domain":"example.com","website":"https://example.com"}}]"""
 
