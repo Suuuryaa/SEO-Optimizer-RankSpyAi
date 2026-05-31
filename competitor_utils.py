@@ -1,6 +1,53 @@
 from urllib.parse import urlparse
 import json
+import re
 import time
+
+
+def _extract_json_list(text):
+    """Robustly extract a JSON array from messy LLM output."""
+    text = text.strip()
+
+    # 1. Try parsing the whole thing directly
+    try:
+        result = json.loads(text)
+        if isinstance(result, list):
+            return result
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Strip markdown fences: ```json ... ``` or ``` ... ```
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    if fence:
+        try:
+            result = json.loads(fence.group(1).strip())
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    # 3. Find first [ ... ] spanning the whole array
+    start = text.find("[")
+    end = text.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        try:
+            result = json.loads(text[start:end + 1])
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    # 4. Try to collect individual {...} objects inside the text
+    objects = re.findall(r'\{[^{}]*\}', text, re.DOTALL)
+    if objects:
+        try:
+            result = json.loads(f"[{','.join(objects)}]")
+            if isinstance(result, list) and result:
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    return None
 
 
 def _get_domain(url):
@@ -285,17 +332,11 @@ Return ONLY a valid JSON array with no markdown fences or explanation:
                 if resp.status_code == 200:
                     data = resp.json()
                     text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    if "```" in text:
-                        parts = text.split("```")
-                        text = parts[1] if len(parts) > 1 else parts[0]
-                        if text.startswith("json"):
-                            text = text[4:]
-                    try:
-                        competitors = json.loads(text.strip())
-                        return competitors if isinstance(competitors, list) else []
-                    except json.JSONDecodeError:
-                        last_error = f"{model}/{api_ver} → invalid JSON in response"
-                        continue
+                    competitors = _extract_json_list(text)
+                    if competitors is not None:
+                        return competitors
+                    last_error = f"{model}/{api_ver} → could not extract JSON list. Raw: {text[:300]}"
+                    continue
 
                 last_error = f"{model}/{api_ver} → HTTP {resp.status_code}: {resp.text[:200]}"
 
