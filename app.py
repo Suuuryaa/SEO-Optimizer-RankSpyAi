@@ -289,12 +289,13 @@ def create_horizontal_bar(labels, values, colors=None, title="", display_labels=
     if colors is None:
         colors = ['#667eea' if v >= 70 else '#FFA726' if v >= 50 else '#EF5350' for v in values]
     text = display_labels if display_labels else [f"{v}" for v in values]
+    text_colors = colors if colors else ['white'] * len(values)
     fig = go.Figure(go.Bar(
         y=labels, x=values, orientation='h',
         marker=dict(color=colors, line=dict(width=0)),
         text=text,
         textposition='outside',
-        textfont=dict(color='white', size=11)
+        textfont=dict(color=text_colors, size=12, family="Arial Black")
     ))
     fig.update_layout(
         title=dict(text=title, font=dict(size=13, color='white'), x=0),
@@ -712,10 +713,10 @@ table{{font-size:0.85rem;}} th,td{{padding:6px 10px;text-align:left;}}
         }
         t_labels = list(tech_factors.keys())
         t_bools = list(tech_factors.values())
-        t_vals = [100 if v else 15 for v in t_bools]   # 15 keeps bar visible; label shows true value
-        t_display = ["100" if v else "0" for v in t_bools]
+        t_vals = [100 if v else 15 for v in t_bools]
+        t_display = ["✓  Pass" if v else "✗  Fail" for v in t_bools]
         t_colors = ["#00C853" if v else "#EF5350" for v in t_bools]
-        st.plotly_chart(create_horizontal_bar(t_labels, t_vals, t_colors, "Technical Audit Score (100 = Pass, 0 = Fail)", display_labels=t_display), use_container_width=True)
+        st.plotly_chart(create_horizontal_bar(t_labels, t_vals, t_colors, "Technical SEO Audit", display_labels=t_display), use_container_width=True)
 
         tech_col1, tech_col2 = st.columns(2)
 
