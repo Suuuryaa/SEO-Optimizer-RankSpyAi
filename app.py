@@ -952,26 +952,29 @@ table{{font-size:0.85rem;}} th,td{{padding:6px 10px;text-align:left;}}
             )
             for crawler in geo_crawlers["crawlers"]:
                 _cs = crawler["status"]
+            _crawler_rows_html = ""
+            for crawler in geo_crawlers["crawlers"]:
+                _cs = crawler["status"]
                 _cc = "#00C853" if _cs == "allowed" else ("#EF5350" if _cs == "blocked" else "#FF9800")
                 _ci = "✓" if _cs == "allowed" else ("✗" if _cs == "blocked" else "–")
                 _is_crit = crawler["priority"] == "critical"
-                st.markdown(
+                _fw = "600" if _is_crit else "400"
+                _fc = "rgba(255,255,255,0.75)" if _is_crit else "rgba(255,255,255,0.45)"
+                _crawler_rows_html += (
                     f'<div style="display:flex;align-items:center;justify-content:space-between;'
-                    f'padding:0.45rem 0.6rem;margin-bottom:0.3rem;'
+                    f'padding:0.4rem 0.6rem;margin-bottom:2px;'
                     f'background:#0a0a0a;border:1px solid rgba(255,255,255,0.05);border-radius:6px;">'
-                    f'<span style="font-size:0.75rem;color:rgba(255,255,255,{"0.75" if _is_crit else "0.45"});'
-                    f'font-weight:{"600" if _is_crit else "400"};">{crawler["name"]}</span>'
+                    f'<span style="font-size:0.75rem;color:{_fc};font-weight:{_fw};">{crawler["name"]}</span>'
                     f'<span style="font-size:0.72rem;font-weight:700;color:{_cc};">{_ci} {_cs}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True
+                    f'</div>'
                 )
             _sm_c = "#00C853" if geo_crawlers["has_sitemap"] else "#EF5350"
             _sm_i = "✓" if geo_crawlers["has_sitemap"] else "✗"
-            st.markdown(
-                f'<div style="font-size:0.72rem;font-weight:600;color:{_sm_c};margin-top:0.6rem;">'
-                f'{_sm_i} Sitemap in robots.txt</div>',
-                unsafe_allow_html=True
+            _crawler_rows_html += (
+                f'<div style="font-size:0.72rem;font-weight:600;color:{_sm_c};margin-top:0.5rem;">'
+                f'{_sm_i} Sitemap in robots.txt</div>'
             )
+            st.markdown(_crawler_rows_html, unsafe_allow_html=True)
 
         with geo_c2:
             st.markdown('<div style="font-size:0.65rem;font-weight:800;color:rgba(255,255,255,0.4);letter-spacing:0.14em;text-transform:uppercase;margin:0 0 0.6rem;">llms.txt</div>', unsafe_allow_html=True)
@@ -1005,18 +1008,19 @@ table{{font-size:0.85rem;}} th,td{{padding:6px 10px;text-align:left;}}
                 ("Privacy policy",   signals.get("has_privacy", False)),
                 ("HTTPS",            signals.get("has_https", False)),
             ]
+            _eeat_html = ""
             for label, passed in eeat_items:
                 _ec = "#00C853" if passed else "#EF5350"
                 _ei = "✓" if passed else "✗"
-                st.markdown(
+                _eeat_html += (
                     f'<div style="display:flex;align-items:center;justify-content:space-between;'
-                    f'padding:0.45rem 0.6rem;margin-bottom:0.3rem;'
+                    f'padding:0.4rem 0.6rem;margin-bottom:2px;'
                     f'background:#0a0a0a;border:1px solid rgba(255,255,255,0.05);border-radius:6px;">'
                     f'<span style="font-size:0.75rem;color:rgba(255,255,255,0.55);">{label}</span>'
                     f'<span style="font-size:0.75rem;font-weight:700;color:{_ec};">{_ei}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True
+                    f'</div>'
                 )
+            st.markdown(_eeat_html, unsafe_allow_html=True)
 
         st.markdown("<div style='margin:1.5rem 0;border-top:1px solid rgba(255,255,255,0.06);'></div>", unsafe_allow_html=True)
         st.markdown('<div class="section-header">Content Citability</div>', unsafe_allow_html=True)
