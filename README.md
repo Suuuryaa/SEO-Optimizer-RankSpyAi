@@ -8,7 +8,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![Gemini AI](https://img.shields.io/badge/Gemini%20AI-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://aistudio.google.com)
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
-[![Uptime](https://img.shields.io/badge/Uptime-Auto%20Pinged-orange?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/Suuuryaa/seo-analysis-venue-dashboard/actions)
+[![Uptime](https://img.shields.io/badge/Uptime-Auto%20Pinged-orange?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/Suuuryaa/RankSpyAi/actions)
 
 <br/>
 
@@ -154,8 +154,8 @@ Analyses **Experience, Expertise, Authoritativeness, and Trust** signals. Checks
 
 ```bash
 # 1. Clone
-git clone https://github.com/Suuuryaa/seo-analysis-venue-dashboard.git
-cd seo-analysis-venue-dashboard
+git clone https://github.com/Suuuryaa/RankSpyAi.git
+cd RankSpyAi
 
 # 2. Create virtual environment
 python3 -m venv venv
