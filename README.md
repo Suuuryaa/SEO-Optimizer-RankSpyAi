@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=32&pause=1000&color=B02025&center=true&vCenter=true&width=600&lines=FunLab+SEO+Dashboard;AI-Powered+SEO+Intelligence;Outrank+Your+Competitors" alt="Typing SVG" />
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=32&pause=1000&color=B02025&center=true&vCenter=true&width=700&lines=AI-Powered+SEO+Intelligence+Tool;Analyse.+Benchmark.+Outrank.;Know+Exactly+Where+You+Stand." alt="Typing SVG" />
 
 <br/>
 
-[![Live App](https://img.shields.io/badge/🚀%20Live%20App-suryaseodashboard.streamlit.app-B02025?style=for-the-badge&logoColor=white)](https://suryaseodashboard.streamlit.app)
+[![Live App](https://img.shields.io/badge/🚀%20Live%20App-Try%20It%20Now-B02025?style=for-the-badge&logoColor=white)](https://suryaseodashboard.streamlit.app)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![Gemini AI](https://img.shields.io/badge/Gemini%20AI-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://aistudio.google.com)
@@ -12,91 +12,62 @@
 
 <br/>
 
-> **Paste a URL. Pick a keyword. Get a full competitive SEO intelligence report in minutes — powered by Google data and Gemini AI.**
-
-<br/>
-
-<img width="90%" src="https://raw.githubusercontent.com/Suuuryaa/seo-analysis-venue-dashboard/main/assets/demo.png" alt="Dashboard Preview" onerror="this.style.display='none'" />
+> **Paste a URL. Pick a keyword. Get a full AI-powered SEO intelligence report in minutes — backed by real Google data, competitor analysis, and Gemini AI.**
 
 </div>
 
 ---
 
-## ✨ What It Does
+## 🧠 What Is This?
 
-FunLab SEO Dashboard gives any business owner or marketer a **complete SEO picture** — no agency required. Enter your website URL and a target keyword, and the dashboard:
+A multi-tool SEO platform that combines **real-time web scraping**, **Google SERP data**, and **Gemini AI** to give you a complete picture of where your site stands — and exactly what to do to rank higher.
 
-1. **Scrapes and scores your page** against 15+ SEO signals
-2. **Finds your real competitors** using Google SERP + Gemini AI
-3. **Benchmarks you side-by-side** against each competitor
-4. **Generates an AI executive report** with specific actions to close the gap
+No agencies. No guesswork. Just data.
 
 ---
 
-## 🗂 Feature Overview
+## 🛠 The Tools Inside
 
 <table>
 <tr>
 <td width="50%">
 
-### 🔍 SEO Analysis
-- Title, meta description & H1 extraction
-- Keyword density & word count scoring
-- Internal & external link analysis
-- Image ALT tag coverage
-- HTTPS & Schema markup detection
-- Google PageSpeed integration
+### 🔍 SEO Analyser
+Deep-scans your page across 15+ ranking signals — titles, meta tags, headings, keyword usage, internal links, image alt text, HTTPS, schema markup, and more. Produces a score from 0–100.
 
 </td>
 <td width="50%">
 
-### 🥇 Competitor Intelligence
-- Gemini AI identifies real direct competitors from URL context
-- Full SERP scraping via Serper API
-- Filters out directories, forums, social media automatically
-- Side-by-side SEO score benchmarking
-- Gap analysis vs best competitor
+### 🥇 AI Competitor Finder
+Uses Gemini AI to identify your **real** direct competitors from just your URL and keyword — understanding your industry, market, and keyword intent automatically. No manual input needed.
 
 </td>
 </tr>
 <tr>
 <td width="50%">
 
-### 📊 Benchmarking & Scoring
-- SEO score (0–100) across all venues
-- Score band classification (Weak / Fair / Good / Strong)
-- Word count, keyword count, link count comparison
-- Interactive bar chart leaderboard
+### 📊 Competitive Benchmarking
+Scrapes and scores every competitor side-by-side. See exactly where you lead, where you lag, and what the gap looks like across word count, keywords, links, and technical signals.
 
 </td>
 <td width="50%">
 
-### 🤖 AI Executive Summary
-- Full written report by Gemini AI
-- Strengths, weaknesses, keyword analysis
-- Technical SEO issues explained plainly
-- 5-point priority action plan
-- Written for non-technical business owners
+### ⚡ PageSpeed & Technical SEO
+Pulls live Google PageSpeed data. Flags technical issues — missing schema, broken alt text, no HTTPS — with pass/fail clarity so you know what to fix first.
 
 </td>
 </tr>
 <tr>
 <td width="50%">
 
-### 🌍 GEO Score
-- E-E-A-T signal analysis
-- Structured data detection
-- Geographic relevance signals
-- Local SEO indicators
+### 🌍 GEO & E-E-A-T Scoring
+Analyses Experience, Expertise, Authoritativeness, and Trust signals. Checks crawler accessibility, structured data, and geographic relevance indicators.
 
 </td>
 <td width="50%">
 
-### 🔑 Keyword Opportunities
-- Missing keywords vs competitors
-- High-frequency competitor terms
-- Keyword placement analysis
-- Content gap identification
+### 🤖 AI Executive Report
+Gemini writes a full SEO strategy report for your site — strengths, weaknesses, keyword gaps, technical issues, competitor insights, and a ranked 5-point action plan. Plain English, no jargon.
 
 </td>
 </tr>
@@ -104,20 +75,20 @@ FunLab SEO Dashboard gives any business owner or marketer a **complete SEO pictu
 
 ---
 
-## 🖥 Dashboard Tabs
+## 📋 Dashboard Tabs
 
-| Tab | What You See |
+| Tab | What You Get |
 |-----|-------------|
-| **Overview** | SEO score, score band, keyword placement, leaderboard chart |
-| **Technical SEO** | Pass/fail tiles for HTTPS, schema, alt text, PageSpeed |
-| **Content Analysis** | Word count, keyword density, internal links breakdown |
-| **GEO Score** | E-E-A-T signals, crawler accessibility, structured data |
+| **Overview** | SEO score, score band, keyword placement, competitor leaderboard chart |
+| **Technical SEO** | Pass/fail grid — HTTPS, schema, alt text, PageSpeed score |
+| **Content Analysis** | Word count, keyword density, internal/external link breakdown |
+| **GEO Score** | E-E-A-T signals, crawler accessibility, structured data checks |
 | **Recommendations** | Prioritised action list with impact explanations |
-| **AI Report** | Full written executive summary by Gemini AI |
+| **AI Report** | Full written strategy report generated by Gemini AI |
 
 ---
 
-## ⚙️ Tech Stack
+## ⚙️ Built With
 
 <div align="center">
 
@@ -126,27 +97,26 @@ FunLab SEO Dashboard gives any business owner or marketer a **complete SEO pictu
 ![Pandas](https://img.shields.io/badge/Pandas-150458?style=flat-square&logo=pandas&logoColor=white)
 ![Plotly](https://img.shields.io/badge/Plotly-3F4F75?style=flat-square&logo=plotly&logoColor=white)
 ![Google Gemini](https://img.shields.io/badge/Gemini%20AI-4285F4?style=flat-square&logo=google&logoColor=white)
-![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup4-43853D?style=flat-square&logo=python&logoColor=white)
 ![Redis](https://img.shields.io/badge/Upstash%20Redis-DC382D?style=flat-square&logo=redis&logoColor=white)
 
 </div>
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Streamlit + custom HTML/CSS |
-| AI | Google Gemini (REST API, auto model discovery) |
-| Search Data | Serper API (Google SERP) |
+| UI | Streamlit + custom HTML/CSS dark theme |
+| AI Engine | Google Gemini (REST API, auto model discovery) |
+| Search Data | Serper API (live Google SERP results) |
 | Performance | Google PageSpeed Insights API |
-| Scraping | BeautifulSoup4, Scrapling, lxml |
+| Web Scraping | BeautifulSoup4, Scrapling, lxml |
 | Rate Limiting | Upstash Redis (global shared pool) |
-| Uptime | GitHub Actions cron (every 30 min) |
+| Uptime | GitHub Actions cron (pings every 30 min) |
 
 ---
 
 ## 🚀 Run Locally
 
 ```bash
-# 1. Clone the repo
+# 1. Clone
 git clone https://github.com/Suuuryaa/seo-analysis-venue-dashboard.git
 cd seo-analysis-venue-dashboard
 
@@ -158,8 +128,8 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # 4. Add your API keys
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
-# Edit secrets.toml with your keys
+mkdir -p .streamlit
+# Create .streamlit/secrets.toml with your keys (see below)
 
 # 5. Run
 streamlit run app.py
@@ -167,7 +137,7 @@ streamlit run app.py
 
 ---
 
-## 🔑 Required API Keys
+## 🔑 API Keys Required
 
 | Key | Where to Get | Required? |
 |-----|-------------|-----------|
@@ -180,20 +150,20 @@ streamlit run app.py
 
 ---
 
-## 🌐 Deploy to Streamlit Cloud
+## ☁️ Deploy to Streamlit Cloud
 
 1. Fork this repo
 2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Connect your repo → set `app.py` as main file
-4. Add your API keys in **App settings → Secrets**
-5. Deploy ✅
+3. Connect your repo → set `app.py` as the main file
+4. Add your API keys under **App settings → Secrets**
+5. Hit Deploy ✅
 
 ---
 
 <div align="center">
 
-**Built with ❤️ by [Suuuryaa](https://github.com/Suuuryaa)**
+**Built by [Suuuryaa](https://github.com/Suuuryaa)**
 
-[![Live Demo](https://img.shields.io/badge/Try%20It%20Live-B02025?style=for-the-badge&logo=streamlit&logoColor=white)](https://suryaseodashboard.streamlit.app)
+[![Try It Live](https://img.shields.io/badge/Try%20It%20Live-B02025?style=for-the-badge&logo=streamlit&logoColor=white)](https://suryaseodashboard.streamlit.app)
 
 </div>
