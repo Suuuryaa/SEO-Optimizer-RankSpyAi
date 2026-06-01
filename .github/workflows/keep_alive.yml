@@ -2,7 +2,7 @@ name: Keep Streamlit Awake
 
 on:
   schedule:
-    - cron: '0 * * * *'  # every hour
+    - cron: '*/30 * * * *'  # every 30 mins
   workflow_dispatch:      # manual trigger
 
 jobs:
