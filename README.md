@@ -3,27 +3,44 @@
 # 🔍 AI-Powered SEO Intelligence Tool
 ### Analyse · Benchmark · Outrank
 
-<br/>
-
 [![Live App](https://img.shields.io/badge/🚀%20Live%20App-Try%20It%20Now-B02025?style=for-the-badge&logoColor=white)](https://suryaseodashboard.streamlit.app)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![Gemini AI](https://img.shields.io/badge/Gemini%20AI-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://aistudio.google.com)
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
+[![Uptime](https://img.shields.io/badge/Uptime-Auto%20Pinged-orange?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/Suuuryaa/seo-analysis-venue-dashboard/actions)
 
 <br/>
 
-> **Paste a URL. Pick a keyword. Get a full AI-powered SEO intelligence report in minutes — backed by real Google data, competitor analysis, and Gemini AI.**
+> **Paste a URL. Pick a keyword. Get a complete AI-powered SEO intelligence report in minutes —**
+> **backed by real Google data, live competitor analysis, and Gemini AI.**
 
-</div>
+<br/>
 
 ---
+
+### 💡 Why This Tool?
+
+| ❌ Without This Tool | ✅ With This Tool |
+|---|---|
+| Guess why you're not ranking | See exactly what's missing vs competitors |
+| Manually check 10+ SEO factors | Full audit in one click |
+| Hire an agency to find competitors | Gemini AI identifies them from your URL |
+| Read generic SEO advice | Get a report written for YOUR site |
+| Check tools one by one | Everything in one dashboard |
+
+---
+
+</div>
 
 ## 🧠 What Is This?
 
 A multi-tool SEO platform that combines **real-time web scraping**, **Google SERP data**, and **Gemini AI** to give you a complete picture of where your site stands — and exactly what to do to rank higher.
 
-No agencies. No guesswork. Just data.
+- Works for **any industry** — fashion, SaaS, hospitality, legal, e-commerce, anything
+- **No manual competitor research** — AI figures out your market and competitors from your URL alone
+- **No SEO knowledge needed** — the AI report explains everything in plain English
+- Built for **business owners, marketers, and developers** who want real answers fast
 
 ---
 
@@ -34,13 +51,13 @@ No agencies. No guesswork. Just data.
 <td width="50%">
 
 ### 🔍 SEO Analyser
-Deep-scans your page across 15+ ranking signals — titles, meta tags, headings, keyword usage, internal links, image alt text, HTTPS, schema markup, and more. Produces a score from 0–100.
+Deep-scans your page across **15+ ranking signals** — titles, meta tags, headings, keyword usage, internal links, image alt text, HTTPS, schema markup, and more. Produces a score from **0–100**.
 
 </td>
 <td width="50%">
 
-### 🥇 AI Competitor Finder
-Uses Gemini AI to identify your **real** direct competitors from just your URL and keyword — understanding your industry, market, and keyword intent automatically. No manual input needed.
+### 🤖 AI Competitor Finder
+Uses **Gemini AI** to identify your real direct competitors from just your URL and keyword — understanding your industry, market, and keyword intent automatically. No manual input needed.
 
 </td>
 </tr>
@@ -54,7 +71,7 @@ Scrapes and scores every competitor side-by-side. See exactly where you lead, wh
 <td width="50%">
 
 ### ⚡ PageSpeed & Technical SEO
-Pulls live Google PageSpeed data. Flags technical issues — missing schema, broken alt text, no HTTPS — with pass/fail clarity so you know what to fix first.
+Pulls live **Google PageSpeed** data. Flags technical issues — missing schema, broken alt text, no HTTPS — with pass/fail clarity so you know what to fix first.
 
 </td>
 </tr>
@@ -62,13 +79,13 @@ Pulls live Google PageSpeed data. Flags technical issues — missing schema, bro
 <td width="50%">
 
 ### 🌍 GEO & E-E-A-T Scoring
-Analyses Experience, Expertise, Authoritativeness, and Trust signals. Checks crawler accessibility, structured data, and geographic relevance indicators.
+Analyses **Experience, Expertise, Authoritativeness, and Trust** signals. Checks crawler accessibility, structured data, and geographic relevance indicators.
 
 </td>
 <td width="50%">
 
 ### 🤖 AI Executive Report
-Gemini writes a full SEO strategy report for your site — strengths, weaknesses, keyword gaps, technical issues, competitor insights, and a ranked 5-point action plan. Plain English, no jargon.
+**Gemini writes a full SEO strategy report** for your site — strengths, weaknesses, keyword gaps, technical issues, competitor insights, and a ranked 5-point action plan. Plain English, no jargon.
 
 </td>
 </tr>
@@ -89,6 +106,24 @@ Gemini writes a full SEO strategy report for your site — strengths, weaknesses
 
 ---
 
+## 🔄 How It Works
+
+```
+1. Enter your website URL + target keyword
+         ↓
+2. Tool scrapes your page and scores 15+ SEO signals
+         ↓
+3. Gemini AI identifies your real competitors (by industry + market)
+         ↓
+4. Each competitor is scraped and scored side-by-side
+         ↓
+5. AI generates a full written strategy report
+         ↓
+6. You get a ranked action plan to close the gap
+```
+
+---
+
 ## ⚙️ Built With
 
 <div align="center">
@@ -99,6 +134,7 @@ Gemini writes a full SEO strategy report for your site — strengths, weaknesses
 ![Plotly](https://img.shields.io/badge/Plotly-3F4F75?style=flat-square&logo=plotly&logoColor=white)
 ![Google Gemini](https://img.shields.io/badge/Gemini%20AI-4285F4?style=flat-square&logo=google&logoColor=white)
 ![Redis](https://img.shields.io/badge/Upstash%20Redis-DC382D?style=flat-square&logo=redis&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)
 
 </div>
 
@@ -130,15 +166,25 @@ pip install -r requirements.txt
 
 # 4. Add your API keys
 mkdir -p .streamlit
-# Create .streamlit/secrets.toml with your keys (see below)
+# Create .streamlit/secrets.toml — see format below
 
 # 5. Run
 streamlit run app.py
 ```
 
+**`.streamlit/secrets.toml` format:**
+```toml
+GEMINI_API_KEY = "AIza..."
+SERPER_API_KEY = "..."
+PAGESPEED_API_KEY = "..."        # optional
+ADMIN_PASSWORD = "yourpassword"  # optional
+UPSTASH_REDIS_REST_URL = "..."   # optional
+UPSTASH_REDIS_REST_TOKEN = "..."  # optional
+```
+
 ---
 
-## 🔑 API Keys Required
+## 🔑 API Keys
 
 | Key | Where to Get | Required? |
 |-----|-------------|-----------|
@@ -149,15 +195,60 @@ streamlit run app.py
 | `UPSTASH_REDIS_REST_URL` | [upstash.com](https://upstash.com) | Optional |
 | `UPSTASH_REDIS_REST_TOKEN` | [upstash.com](https://upstash.com) | Optional |
 
+> 💡 **Tip:** Gemini API is free at [aistudio.google.com](https://aistudio.google.com). Serper gives 2,500 free searches/month.
+
 ---
 
 ## ☁️ Deploy to Streamlit Cloud
 
+```
 1. Fork this repo
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Connect your repo → set `app.py` as the main file
-4. Add your API keys under **App settings → Secrets**
-5. Hit Deploy ✅
+2. Go to share.streamlit.io
+3. Connect your GitHub repo → set app.py as main file
+4. Add API keys under App settings → Secrets
+5. Deploy ✅
+```
+
+> The app auto-pings itself every 30 minutes via GitHub Actions to stay awake on Streamlit's free tier.
+
+---
+
+## 📁 Project Structure
+
+```
+├── app.py                  # Main Streamlit app
+├── seo_utils.py            # Core SEO scraping & scoring
+├── competitor_utils.py     # Competitor detection & classification
+├── leaderboard_utils.py    # Benchmarking & scoring
+├── summary_utils.py        # AI executive summary (Gemini)
+├── insight_utils.py        # Strategic insights generation
+├── keyword_opportunity_utils.py  # Keyword gap analysis
+├── scoring.py              # SEO scoring algorithm
+├── serp_utils.py           # Google SERP fetching
+├── pagespeed_utils.py      # PageSpeed API integration
+├── benchmark_utils.py      # Comparison utilities
+├── comparison_utils.py     # Side-by-side analysis
+├── requirements.txt        # Python dependencies
+└── .github/workflows/
+    └── keep_alive.yml      # Auto-ping every 30 min
+```
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! If you find a bug or have a feature idea:
+
+1. Fork the repo
+2. Create a branch: `git checkout -b feature/your-idea`
+3. Make your changes and commit
+4. Open a Pull Request
+
+---
+
+## 📄 License
+
+MIT License — free to use, modify, and distribute.
 
 ---
 
@@ -165,6 +256,8 @@ streamlit run app.py
 
 **Built by [Suuuryaa](https://github.com/Suuuryaa)**
 
-[![Try It Live](https://img.shields.io/badge/Try%20It%20Live-B02025?style=for-the-badge&logo=streamlit&logoColor=white)](https://suryaseodashboard.streamlit.app)
+[![Try It Live](https://img.shields.io/badge/🚀%20Try%20It%20Live-B02025?style=for-the-badge&logo=streamlit&logoColor=white)](https://suryaseodashboard.streamlit.app)
+
+*If this helped you, consider giving it a ⭐ star!*
 
 </div>
