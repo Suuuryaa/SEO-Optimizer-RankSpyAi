@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=32&pause=1000&color=B02025&center=true&vCenter=true&width=700&lines=AI-Powered+SEO+Intelligence+Tool;Analyse.+Benchmark.+Outrank.;Know+Exactly+Where+You+Stand." alt="Typing SVG" />
+<img src="https://readme-typing-svg.demolab.com?font=Inter&weight=800&size=28&duration=3000&pause=800&color=FFFFFF&center=true&vCenter=true&multiline=false&width=750&lines=🔍+Deep+SEO+Analysis+in+Seconds;🤖+Gemini+AI+Finds+Your+Real+Competitors;📊+Benchmark+Against+Any+Website;⚡+PageSpeed+%2B+Technical+SEO+Audit;🎯+AI+Writes+Your+Full+Strategy+Report" alt="Typing SVG" />
 
 <br/>
 
