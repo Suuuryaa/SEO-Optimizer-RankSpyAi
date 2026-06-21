@@ -118,6 +118,22 @@ def classify_competitor(url, title="", primary_domain=""):
     if any(x in url_lower for x in ["amazon.", "ebay.", "trademe.co.nz", "etsy."]):
         return "Marketplace"
 
+    # Gaming / esports / unrelated platforms
+    if any(x in url_lower for x in [
+        "steampowered.com", "steam.com", "epicgames.com", "xbox.com",
+        "playstation.com", "nintendo.com", "twitch.tv", "discord.com",
+        "esports", "gaming", "tokopedia", "shopee.", "lazada.", "aliexpress.",
+        "flipkart.", "myntra.", "ajio.", "meesho.",
+    ]):
+        return "Marketplace"
+
+    # Maintenance / error pages in title
+    if any(x in title_lower for x in [
+        "down for maintenance", "403 forbidden", "404 not found",
+        "access denied", "site unavailable", "coming soon",
+    ]):
+        return "Content"
+
     # Government and education sites
     if any(x in url_lower for x in [".gov", ".edu", ".ac.nz"]):
         return "Institutional"

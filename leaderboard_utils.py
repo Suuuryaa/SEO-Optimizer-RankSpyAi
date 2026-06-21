@@ -25,12 +25,15 @@ logger = logging.getLogger(__name__)
 
 
 def get_venue_name(url, title):
-    """Extract venue name from title or URL."""
-    if title and title != "No title found":
-        return title[:60]
-
+    """Extract clean brand name from URL domain."""
     parsed = urlparse(url)
-    return parsed.netloc
+    domain = parsed.netloc.lower()
+    # Strip www. and country TLDs to get core brand
+    domain = domain.replace("www.", "")
+    brand = domain.split(".")[0]
+    # Capitalize nicely
+    brand = brand.replace("-", " ").replace("_", " ").title()
+    return brand
 
 
 def analyze_venue(url, keyword):

@@ -1177,17 +1177,7 @@ def _render_comp_results(d):
     error_rows = [r for r in benchmark_rows if r.get("Score Band") == "Blocked"]
     valid_rows = [r for r in benchmark_rows if r.get("Score Band") != "Blocked"]
 
-    if error_rows:
-        blocked = [r["Venue Name"] for r in error_rows]
-        st.warning(f"⚠️ {len(error_rows)} site(s) blocked automated access (common for large corporate sites): {', '.join(blocked)}")
-
-    primary_row = next((r for r in valid_rows if "Primary" in r.get("Role", "")), None)
-
-    if not primary_row:
-        st.error(f"❌ Could not fetch **{url}** — the site blocks automated requests. Try a different URL that doesn't block bots.")
-        valid_comp_rows = [r for r in valid_rows if "Competitor" in r.get("Role", "")]
-        if valid_comp_rows:
-            st.markdown("### 📊 Competitor Scores (primary site unavailable)")
+    primary_row = next((r for r in valid_rows if "Your Site" in r.get("Role", "") or "Primary" in r.get("Role", "")), None)
 
     if valid_rows:
         primary_valid = [r for r in valid_rows if "Primary" in r.get("Role", "")]
@@ -1209,7 +1199,7 @@ def _render_comp_results(d):
             color="Role",
             text="SEO Score",
             orientation="h",
-            color_discrete_map={"🏠 Primary Venue": "#B02025", "🎯 Competitor": "#555555"},
+            color_discrete_map={"🏠 Your Site": "#B02025", "🎯 Competitor": "#555555"},
             title=f"SEO Score vs Competitors — '{keyword}'"
         )
         fig.update_traces(textposition="outside", textfont_size=11,
@@ -1472,6 +1462,9 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
 /* Full black base + moving grid lines (Webflow aesthetic) */
 .stApp { background: #000000 !important; }
 .stApp > div { position: relative; }
+html, body { overflow: hidden !important; height: 100% !important; }
+.stApp { overflow-y: auto !important; height: 100vh !important; }
+section { overflow: visible !important; height: auto !important; min-height: unset !important; }
 
 /* Animated dot-grid background */
 .stApp::before {
@@ -1503,8 +1496,8 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
     border: none;
     border-bottom: 1px solid rgba(176,32,37,0.2);
     border-radius: 0;
-    padding: 1rem 2.5rem 0.8rem;
-    margin: 0 -2.5rem 0.6rem;
+    padding: 1.6rem 2.5rem 1.4rem;
+    margin: 0 -2.5rem 1.2rem;
     position: relative; overflow: hidden;
     animation: fadeInUp 0.8s ease-out both;
 }
@@ -1582,7 +1575,7 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
     border-radius: 16px;
     padding: 2rem 2rem 1.5rem;
     margin-bottom: 1.5rem;
-    position: relative; overflow: hidden;
+    position: relative; overflow: visible;
     animation: fadeInUp 0.6s 0.3s ease-out both;
 }
 /* Animated top border */
@@ -1630,17 +1623,17 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
 }
 
 /* ═══════════════════════════════════════════════
-   BUTTONS — DigitalStrike pill style
+   BUTTONS
 ═══════════════════════════════════════════════ */
 .stButton > button {
     width: 100% !important;
     border-radius: 50px !important;
     height: 3.5em !important;
     font-weight: 700 !important;
-    font-size: 0.88rem !important;
-    letter-spacing: 0.12em !important;
+    font-size: 0.82rem !important;
+    letter-spacing: 0.14em !important;
     text-transform: uppercase !important;
-    transition: all 0.3s ease !important;
+    transition: all 0.25s ease !important;
     border: none !important;
     position: relative !important;
     overflow: hidden !important;
@@ -1650,10 +1643,10 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
     content: '' !important;
     position: absolute !important; top: 0 !important; left: -100% !important;
     width: 50% !important; height: 100% !important;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent) !important;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent) !important;
     animation: shimmer 3s infinite !important;
 }
-/* PRIMARY — bold red like DigitalStrike CTA */
+/* PRIMARY — bold red */
 .stButton > button[kind="primary"] {
     background: #B02025 !important;
     color: #ffffff !important;
@@ -1664,7 +1657,7 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
     transform: translateY(-3px) !important;
     box-shadow: 0 8px 40px rgba(176,32,37,0.6), 0 0 0 1px rgba(255,255,255,0.1) !important;
 }
-/* SECONDARY — ghost white Webflow style */
+/* SECONDARY — ghost white */
 .stButton > button[kind="secondary"] {
     background: transparent !important;
     border: 1.5px solid rgba(255,255,255,0.2) !important;
@@ -1899,9 +1892,12 @@ hr { border-color: rgba(255,255,255,0.07) !important; margin: 2rem 0 !important;
 header[data-testid="stHeader"] { display: none !important; }
 #root > div:nth-child(1) > div > div > div > div > section > div { padding-top: 0 !important; }
 
-/* ── Tighten vertical gaps ── */
-.stTextInput { margin-bottom: 0.3rem !important; }
+/* ── Vertical spacing ── */
+.stTextInput { margin-bottom: 1rem !important; }
+.stTextArea { margin-bottom: 1rem !important; }
 div[data-testid="column"] { padding: 0 0.4rem !important; }
+div[data-testid="stVerticalBlock"] > div { gap: 0.6rem; }
+div[data-testid="stButton"] { margin-bottom: 0.4rem !important; }
 
 /* ── Collapse admin button row gap ── */
 div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"][kind="secondary"]) {
@@ -1917,16 +1913,32 @@ div[data-testid="stHorizontalBlock"] > div:first-child:has(+ div button[key="adm
 button[kind="secondary"][data-testid="baseButton-secondary"]:has-text("COMPARE") {
     width: auto !important;
 }
-div[data-testid="stButton"]:has(button[key="toggle_compare"]) button {
+div[data-testid="stButton"]:has(button[key="toggle_compare"]),
+div[data-testid="stButton"]:has(button[key="toggle_own_keys"]) { display: inline-flex !important; }
+div[data-testid="stButton"]:has(button[key="toggle_compare"]) button,
+div[data-testid="stButton"]:has(button[key="toggle_own_keys"]) button,
+div[data-testid="stButton"]:has(button[key="toggle_compare"]) button:focus,
+div[data-testid="stButton"]:has(button[key="toggle_own_keys"]) button:focus,
+div[data-testid="stButton"]:has(button[key="toggle_compare"]) button:active,
+div[data-testid="stButton"]:has(button[key="toggle_own_keys"]) button:active {
     width: auto !important;
     font-size: 0.72rem !important;
-    height: 2.4em !important;
-    padding: 0 1.2rem !important;
+    height: 2.6em !important;
+    padding: 0 1.4rem !important;
     background: rgba(255,255,255,0.03) !important;
-    border: 1px solid rgba(255,255,255,0.1) !important;
-    letter-spacing: 0.1em !important;
-    color: rgba(255,255,255,0.4) !important;
-    border-radius: 8px !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    letter-spacing: 0.14em !important;
+    color: rgba(255,255,255,0.55) !important;
+    border-radius: 10px !important;
+    text-transform: uppercase !important;
+    font-weight: 600 !important;
+    box-shadow: none !important;
+}
+div[data-testid="stButton"]:has(button[key="toggle_compare"]) button:hover,
+div[data-testid="stButton"]:has(button[key="toggle_own_keys"]) button:hover {
+    background: rgba(176,32,37,0.08) !important;
+    border-color: rgba(176,32,37,0.35) !important;
+    color: rgba(255,100,100,0.9) !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1940,8 +1952,8 @@ st.markdown("""
     <div class="hero-line hero-line-3"></div>
     <div class="hero-glow-bar"></div>
     <div class="hero-eyebrow">AI-Powered SEO Intelligence</div>
-    <div class="hero-title">BOLD STRATEGY.<br><span class="hero-title-accent">STRIKING RESULTS.</span></div>
-    <p class="hero-sub">Analyze, benchmark, and outrank your competitors — powered by AI, driven by data.</p>
+    <div class="hero-title">RANKSPY<span class="hero-title-accent">AI</span></div>
+    <p class="hero-sub">SEO Audit & Competitor Intel. Powered by AI, driven by data.</p>
     <div class="hero-badges">
         <span class="hero-badge">Real-Time Intelligence</span>
         <span class="hero-badge">Competitive Benchmarking</span>
@@ -2053,9 +2065,11 @@ keyword = st.text_input("🔑 Target Keyword", placeholder="e.g. running shoes, 
 if "show_compare_urls" not in st.session_state:
     st.session_state.show_compare_urls = False
 
-toggle_label = "— COMPARE SPECIFIC URLS" if st.session_state.show_compare_urls else "+ COMPARE SPECIFIC URLS  (optional)"
-if st.button(toggle_label, key="toggle_compare", type="secondary"):
-    st.session_state.show_compare_urls = not st.session_state.show_compare_urls
+toggle_label = "— COMPARE SPECIFIC URLS" if st.session_state.show_compare_urls else "+ COMPARE SPECIFIC URLS"
+_tc1, _tc2 = st.columns([2, 5])
+with _tc1:
+    st.button(toggle_label, key="toggle_compare", type="secondary", use_container_width=True,
+              on_click=lambda: st.session_state.update(show_compare_urls=not st.session_state.show_compare_urls))
 
 venue_urls_text = ""
 compare_url = ""
@@ -2074,9 +2088,11 @@ st.markdown("<br>", unsafe_allow_html=True)
 if "show_own_keys" not in st.session_state:
     st.session_state.show_own_keys = False
 
-_own_keys_label = "+ BRING YOUR OWN API KEYS" if not st.session_state.show_own_keys else "— CLOSE API KEYS PANEL"
-if st.button(_own_keys_label, key="toggle_own_keys", type="secondary"):
-    st.session_state.show_own_keys = not st.session_state.show_own_keys
+_own_keys_label = "— BRING YOUR OWN API KEYS" if st.session_state.show_own_keys else "+ BRING YOUR OWN API KEYS"
+_tk1, _tk2 = st.columns([2, 5])
+with _tk1:
+    st.button(_own_keys_label, key="toggle_own_keys", type="secondary", use_container_width=True,
+              on_click=lambda: st.session_state.update(show_own_keys=not st.session_state.show_own_keys))
 
 if st.session_state.show_own_keys:
     _allowed, _remaining = _check_limit()
@@ -2136,7 +2152,7 @@ if st.session_state.show_own_keys:
             os.environ["SCRAPER_API_KEY"] = _scraperapi_key
         st.success("✅ Using your own API keys — unlimited access enabled.")
 
-st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("<br><br>", unsafe_allow_html=True)
 
 # ==================== ACTION BUTTONS ====================
 
@@ -2450,28 +2466,113 @@ if competitors_clicked:
 </div>
 """, unsafe_allow_html=True)
 
+            _SEO_FACTS = [
+                ("75% of users never scroll past the first page of Google results.", "Search Behavior"),
+                ("Pages with a meta description get 5.8% more clicks than those without.", "Meta Tags"),
+                ("Google uses over 200 ranking factors to determine search position.", "Algorithm"),
+                ("Sites that load in 1s convert 3x more than sites that load in 5s.", "Page Speed"),
+                ("Schema markup can increase click-through rates by up to 30%.", "Structured Data"),
+                ("Content with images gets 94% more views than text-only content.", "Content"),
+                ("Mobile traffic now accounts for over 60% of all web searches.", "Mobile SEO"),
+                ("AI tools like ChatGPT cite sources with strong E-E-A-T signals far more often.", "GEO"),
+                ("Backlinks remain one of the top 3 Google ranking factors in 2024.", "Off-Page SEO"),
+                ("The average first-page Google result contains 1,447 words.", "Content"),
+                ("LLMs.txt helps AI crawlers understand your site structure and purpose.", "AI Visibility"),
+                ("Sites with HTTPS rank higher — Google confirmed it as a ranking signal.", "Technical SEO"),
+                ("Internal linking boosts crawlability and distributes page authority.", "Link Structure"),
+                ("53% of mobile users abandon a site that takes more than 3 seconds to load.", "Page Speed"),
+                ("H1 tags with your target keyword improve on-page relevance signals.", "On-Page SEO"),
+                ("Gemini AI is being used right now to score your competitors. Hang tight.", "RankSpyAI"),
+                ("RankSpyAI checks 70+ SEO factors including Core Web Vitals and schema.", "RankSpyAI"),
+                ("Your GEO score measures how likely AI engines are to cite your website.", "RankSpyAI"),
+                ("First-page Google results have an average of 3.8x more backlinks than results on page 2.", "Off-Page SEO"),
+                ("Websites with a blog generate 55% more traffic than those without.", "Content"),
+                ("Once results load, switch between SEO Analysis and Competitor Intel views anytime using the buttons at the top.", "RankSpyAI Tip"),
+                ("You can download your full competitor report as a CSV — look for the download button in the results.", "RankSpyAI Tip"),
+                ("RankSpyAI gives you two reports in one — your full SEO audit AND a competitor benchmark table.", "RankSpyAI Tip"),
+            ]
+
             benchmark_rows = []
-            progress = st.progress(0)
             total = len(gemini_competitors) + 1
-            _patience_notice = st.empty()
-            _patience_notice.markdown("""
-<div style="background:rgba(126,199,163,0.06);border:1px solid rgba(126,199,163,0.15);
-            border-left:3px solid #7EC7A3;border-radius:10px;padding:0.9rem 1.2rem;
-            font-size:0.83rem;color:rgba(255,255,255,0.6);line-height:1.6;">
-    <strong style="color:#7EC7A3;">Processing in progress</strong> — fetching and scoring each site.
-    The page may appear idle but analysis is running in the background.
-    Typical completion: <strong style="color:rgba(255,255,255,0.75);">2–4 minutes</strong>.
+            _fact_idx = [0]
+            _overlay = st.empty()
+
+            def _render_overlay(done, current_name=""):
+                fact, tag = _SEO_FACTS[_fact_idx[0] % len(_SEO_FACTS)]
+                pct = int((done / total) * 100)
+                _fact_idx[0] += 1
+                _overlay.markdown(f"""
+<div style="position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.93);
+            display:flex;flex-direction:column;align-items:center;justify-content:center;
+            font-family:'Space Grotesk','Outfit',sans-serif;">
+
+  <!-- Top label -->
+  <div style="position:absolute;top:2rem;left:2.5rem;">
+    <div style="font-size:0.6rem;font-weight:800;letter-spacing:0.25em;
+                text-transform:uppercase;color:#B02025;">RankSpyAI</div>
+    <div style="font-size:0.75rem;color:rgba(255,255,255,0.3);margin-top:0.2rem;">
+        Working hard to get you the right intel...
+    </div>
+  </div>
+
+  <!-- Centre: fact card -->
+  <div style="max-width:640px;width:90%;text-align:center;padding:0 1rem;">
+    <div style="font-size:0.6rem;font-weight:800;letter-spacing:0.25em;
+                text-transform:uppercase;color:#B02025;margin-bottom:1.2rem;">
+        Did you know &nbsp;·&nbsp; {tag}
+    </div>
+    <div style="font-size:clamp(1.1rem,2.5vw,1.6rem);font-weight:600;
+                color:rgba(255,255,255,0.85);line-height:1.5;">
+        {fact}
+    </div>
+  </div>
+
+  <!-- Bottom bar -->
+  <div style="position:absolute;bottom:0;left:0;right:0;padding:1.5rem 2.5rem;">
+    <!-- Progress bar -->
+    <div style="background:rgba(255,255,255,0.07);border-radius:4px;height:3px;
+                margin-bottom:0.9rem;overflow:hidden;">
+      <div style="background:linear-gradient(90deg,#B02025,#ff4444);
+                  height:100%;width:{pct}%;transition:width 0.4s ease;border-radius:4px;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:0.72rem;color:rgba(255,255,255,0.35);">
+        {"Analyzing your site..." if done == 0 else f"Analyzing competitor {done}/{len(gemini_competitors)}: {current_name}"}
+      </div>
+      <div style="font-size:0.72rem;color:rgba(255,255,255,0.25);">
+        {done} / {total} &nbsp;·&nbsp; {pct}% complete
+      </div>
+    </div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-            with st.spinner("Analyzing primary venue..."):
-                try:
-                    primary_data = analyze_venue(url, keyword)
-                    primary_data["Role"] = "🏠 Primary Venue"
-                    benchmark_rows.append(primary_data)
-                except Exception as e:
-                    st.warning(f"Could not analyze primary URL: {e}")
-            progress.progress(1 / total)
+            import threading
+
+            _stop_flag = [False]
+            _current_done = [0]
+            _current_name = [""]
+
+            # Fact rotator thread — updates overlay every 4s independently
+            def _fact_rotator():
+                while not _stop_flag[0]:
+                    _render_overlay(_current_done[0], _current_name[0])
+                    for _ in range(40):  # check stop every 0.1s, total 4s
+                        if _stop_flag[0]:
+                            break
+                        time.sleep(0.1)
+
+            _render_overlay(0)
+            _t = threading.Thread(target=_fact_rotator, daemon=True)
+            _t.start()
+
+            try:
+                primary_data = analyze_venue(url, keyword)
+                primary_data["Role"] = "🏠 Your Site"
+                primary_data["Venue Name"] = url.replace("https://","").replace("http://","").replace("www.","").split("/")[0]
+                benchmark_rows.append(primary_data)
+            except Exception as e:
+                st.warning(f"Could not analyze primary URL: {e}")
 
             # ── Step 3: Analyze each competitor ─────────────────────────────
             for idx, comp in enumerate(gemini_competitors):
@@ -2479,31 +2580,35 @@ if competitors_clicked:
                 comp_name = comp.get("name", comp_url)
                 if not comp_url or comp_url == "https://":
                     continue
-                with st.spinner(f"Analyzing competitor {idx+1}/{len(gemini_competitors)}: {comp_name}..."):
-                    try:
-                        row = analyze_venue(comp_url, keyword)
-                        row["Role"] = "🎯 Competitor"
-                        benchmark_rows.append(row)
-                    except Exception:
-                        benchmark_rows.append({
-                            "Venue Name": comp_name,
-                            "URL": comp_url,
-                            "SEO Score": 0,
-                            "Score Band": "Blocked",
-                            "Role": "🎯 Competitor",
-                            "Word Count": 0, "Keyword Count": 0,
-                            "Keyword Density": 0, "Internal Links": 0,
-                            "External Links": 0, "Images Missing ALT": 0,
-                            "HTTPS": "✗", "Schema": "✗"
-                        })
-                progress.progress((idx + 2) / total)
+                _current_done[0] = idx + 1
+                _current_name[0] = comp_name
+                try:
+                    row = analyze_venue(comp_url, keyword)
+                    row["Venue Name"] = comp_name  # use Gemini's brand name
+                    row["Role"] = "🎯 Competitor"
+                    benchmark_rows.append(row)
+                except Exception:
+                    benchmark_rows.append({
+                        "Venue Name": comp_name,
+                        "URL": comp_url,
+                        "SEO Score": 0,
+                        "Score Band": "Blocked",
+                        "Role": "🎯 Competitor",
+                        "Word Count": 0, "Keyword Count": 0,
+                        "Keyword Density": 0, "Internal Links": 0,
+                        "External Links": 0, "Images Missing ALT": 0,
+                        "HTTPS": "✗", "Schema": "✗"
+                    })
+
+            _stop_flag[0] = True
+            _t.join(timeout=1)
 
             if not benchmark_rows:
+                _overlay.empty()
                 st.warning("No data to display.")
                 st.stop()
 
-            progress.empty()
-            _patience_notice.empty()
+            _overlay.empty()
 
             # Store competitor results in session state
             st.session_state.comp_data = dict(
@@ -2525,3 +2630,384 @@ if not analyze_clicked and not competitors_clicked:
         _render_seo_results(st.session_state.seo_data)
     elif st.session_state.results_view == "comp" and st.session_state.comp_data:
         _render_comp_results(st.session_state.comp_data)
+    elif not st.session_state.seo_data and not st.session_state.comp_data:
+        # ── What is SEO ──
+        st.markdown("""
+<div style="margin:3rem 0 1.2rem;">
+  <div style="font-size:0.75rem;letter-spacing:0.18em;color:#B02025;text-transform:uppercase;font-weight:700;margin-bottom:0.5rem;">SEO Explained</div>
+  <div style="font-size:1.9rem;font-weight:800;color:#fff;line-height:1.2;">What is SEO & why does it matter?</div>
+  <div style="font-size:0.95rem;color:rgba(255,255,255,0.5);margin-top:0.5rem;max-width:580px;">Search Engine Optimisation is how your website earns free, organic traffic from Google — without paying for ads.</div>
+</div>
+""", unsafe_allow_html=True)
+
+        sa, sb, sc, sd = st.columns(4)
+        _seo_cards = [
+            (sa, "🔍", "Higher Rankings", "Appear on page 1 of Google when customers search for your products or services."),
+            (sb, "📈", "More Organic Traffic", "Drive a steady stream of visitors without spending on ads — 24/7, for free."),
+            (sc, "🏆", "Beat Competitors", "Understand exactly what your rivals are doing and outrank them with data."),
+            (sd, "💼", "Build Trust", "Sites that rank high are perceived as credible. SEO signals authority to both Google and your customers."),
+        ]
+        for col, icon, title, body in _seo_cards:
+            with col:
+                st.markdown(f"""
+<div style="background:#0d0d0d;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:1.3rem 1.1rem 1.4rem;height:100%;box-sizing:border-box;">
+  <div style="font-size:2rem;margin-bottom:0.7rem;">{icon}</div>
+  <div style="font-size:0.95rem;font-weight:700;color:#fff;margin-bottom:0.45rem;">{title}</div>
+  <div style="font-size:0.82rem;color:rgba(255,255,255,0.5);line-height:1.55;">{body}</div>
+</div>
+""", unsafe_allow_html=True)
+
+        st.markdown("<div style='margin-bottom:2.5rem;'></div>", unsafe_allow_html=True)
+
+        # ── How It Works ──
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown("""
+<div style="background:#0d0d0d;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:1.4rem;height:100%;">
+  <div style="font-size:2.2rem;font-weight:900;color:rgba(176,32,37,0.35);line-height:1;margin-bottom:0.8rem;">01</div>
+  <div style="font-size:0.95rem;font-weight:700;color:#ffffff;margin-bottom:0.5rem;">Enter your URL &amp; keyword</div>
+  <div style="font-size:0.78rem;color:rgba(255,255,255,0.38);line-height:1.6;">Paste your website URL and the keyword you want to rank for. Optionally add competitor URLs to compare against.</div>
+</div>""", unsafe_allow_html=True)
+        with c2:
+            st.markdown("""
+<div style="background:#0d0d0d;border:1px solid rgba(176,32,37,0.2);border-radius:14px;padding:1.4rem;height:100%;">
+  <div style="font-size:2.2rem;font-weight:900;color:rgba(176,32,37,0.35);line-height:1;margin-bottom:0.8rem;">02</div>
+  <div style="font-size:0.95rem;font-weight:700;color:#ffffff;margin-bottom:0.5rem;">Choose your analysis</div>
+  <div style="font-size:0.78rem;color:rgba(255,255,255,0.38);line-height:1.6;"><b style="color:rgba(255,255,255,0.6);">Analyze SEO</b> — full technical audit of your page.<br><b style="color:rgba(255,255,255,0.6);">Find Competitors</b> — AI discovers who outranks you on Google.</div>
+</div>""", unsafe_allow_html=True)
+        with c3:
+            st.markdown("""
+<div style="background:#0d0d0d;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:1.4rem;height:100%;">
+  <div style="font-size:2.2rem;font-weight:900;color:rgba(176,32,37,0.35);line-height:1;margin-bottom:0.8rem;">03</div>
+  <div style="font-size:0.95rem;font-weight:700;color:#ffffff;margin-bottom:0.5rem;">Get your AI report</div>
+  <div style="font-size:0.78rem;color:rgba(255,255,255,0.38);line-height:1.6;">100-point SEO score, competitor benchmarks, keyword gaps, GEO visibility, and a prioritized Gemini AI action plan. Switch between <b style="color:rgba(255,255,255,0.5);">SEO Analysis</b> and <b style="color:rgba(255,255,255,0.5);">Competitor Intel</b> views anytime.</div>
+</div>""", unsafe_allow_html=True)
+
+        st.markdown("<hr style='border:none;border-top:1px solid rgba(255,255,255,0.05);margin:2rem 0;'>", unsafe_allow_html=True)
+
+        st.markdown("""
+<style>
+.lp-section { padding: 4rem 0 3rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.lp-row { display: flex; align-items: center; gap: 3rem; }
+.lp-row.reverse { flex-direction: row-reverse; }
+.lp-text { flex: 1; }
+.lp-graphic { flex: 1; }
+.lp-eyebrow {
+    font-size: 0.65rem; font-weight: 800; letter-spacing: 0.22em;
+    text-transform: uppercase; color: #B02025; margin-bottom: 0.6rem;
+}
+.lp-heading {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: clamp(1.8rem, 3vw, 2.6rem);
+    font-weight: 800; color: #ffffff; line-height: 1.1;
+    margin: 0 0 0.5rem;
+}
+.lp-heading span { color: #B02025; }
+.lp-desc {
+    font-size: 0.9rem; color: rgba(255,255,255,0.45);
+    line-height: 1.7; margin-bottom: 1.2rem; max-width: 480px;
+}
+.lp-bullets { list-style: none; padding: 0; margin: 0; }
+.lp-bullets li {
+    font-size: 0.85rem; color: rgba(255,255,255,0.6);
+    padding: 0.35rem 0; display: flex; align-items: center; gap: 0.6rem;
+}
+.lp-bullets li::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: #B02025; flex-shrink: 0;
+}
+.lp-mock {
+    background: #0d0d0d;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 1.4rem;
+    position: relative;
+}
+.lp-mock-bar {
+    display: flex; gap: 5px; margin-bottom: 1rem;
+}
+.lp-mock-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+}
+.lp-mock-row {
+    display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.6rem;
+}
+.lp-mock-label {
+    font-size: 0.65rem; color: rgba(255,255,255,0.3);
+    text-transform: uppercase; letter-spacing: 0.1em; width: 90px; flex-shrink: 0;
+}
+.lp-mock-bar-fill {
+    height: 6px; border-radius: 3px; flex: 1;
+}
+.lp-mock-score {
+    font-size: 2.5rem; font-weight: 900;
+    font-family: 'Barlow Condensed', sans-serif;
+    margin-bottom: 0.3rem;
+}
+.lp-mock-tag {
+    display: inline-block;
+    font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; padding: 3px 10px; border-radius: 20px;
+    margin: 2px;
+}
+.lp-divider {
+    border: none; border-top: 1px solid rgba(255,255,255,0.05); margin: 0;
+}
+</style>
+
+<!-- SECTION 1: SEO Audit -->
+<div class="lp-section">
+  <div class="lp-row">
+    <div class="lp-text">
+      <div class="lp-eyebrow">SEO Audit</div>
+      <div class="lp-heading">Full technical audit.<br><span>100-point score.</span></div>
+      <p class="lp-desc">RankSpyAI scans your page for every factor that affects your Google ranking — from meta tags to Core Web Vitals.</p>
+      <ul class="lp-bullets">
+        <li>Title, meta description & heading analysis</li>
+        <li>Core Web Vitals & PageSpeed scores</li>
+        <li>Schema markup & structured data check</li>
+        <li>Canonical, robots & indexability audit</li>
+        <li>Mobile responsiveness & image optimization</li>
+      </ul>
+    </div>
+    <div class="lp-graphic">
+      <div class="lp-mock">
+        <div class="lp-mock-bar">
+          <div class="lp-mock-dot" style="background:#ff5f57;"></div>
+          <div class="lp-mock-dot" style="background:#febc2e;"></div>
+          <div class="lp-mock-dot" style="background:#28c840;"></div>
+        </div>
+        <div style="margin-bottom:1rem;">
+          <div class="lp-mock-score" style="color:#7EC7A3;">87</div>
+          <div style="font-size:0.7rem;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.12em;">SEO Score</div>
+        </div>
+        <div class="lp-mock-row"><span class="lp-mock-label">On-Page</span><div class="lp-mock-bar-fill" style="background:linear-gradient(90deg,#7EC7A3,#3d9970);width:88%;"></div></div>
+        <div class="lp-mock-row"><span class="lp-mock-label">Technical</span><div class="lp-mock-bar-fill" style="background:linear-gradient(90deg,#B02025,#ff4444);width:62%;"></div></div>
+        <div class="lp-mock-row"><span class="lp-mock-label">Content</span><div class="lp-mock-bar-fill" style="background:linear-gradient(90deg,#f5a623,#e8890a);width:75%;"></div></div>
+        <div class="lp-mock-row"><span class="lp-mock-label">Speed</span><div class="lp-mock-bar-fill" style="background:linear-gradient(90deg,#7EC7A3,#3d9970);width:91%;"></div></div>
+        <div style="margin-top:1rem;display:flex;gap:0.4rem;flex-wrap:wrap;">
+          <span class="lp-mock-tag" style="background:rgba(176,32,37,0.15);color:#ff6b6b;border:1px solid rgba(176,32,37,0.3);">✗ Missing meta desc</span>
+          <span class="lp-mock-tag" style="background:rgba(126,199,163,0.1);color:#7EC7A3;border:1px solid rgba(126,199,163,0.2);">✓ Schema found</span>
+          <span class="lp-mock-tag" style="background:rgba(245,166,35,0.1);color:#f5a623;border:1px solid rgba(245,166,35,0.2);">⚠ Slow LCP</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<hr class="lp-divider"/>
+
+<!-- SECTION 2: Competitor Intel -->
+<div class="lp-section">
+  <div class="lp-row reverse">
+    <div class="lp-text">
+      <div class="lp-eyebrow">Competitor Intel</div>
+      <div class="lp-heading">See who's beating<br><span>you on Google.</span></div>
+      <p class="lp-desc">RankSpyAI automatically identifies your real competitors from SERP data and benchmarks your SEO scores against theirs.</p>
+      <ul class="lp-bullets">
+        <li>AI-identified top SERP competitors</li>
+        <li>Side-by-side SEO score comparison</li>
+        <li>Gap analysis — where you're losing</li>
+        <li>Domain authority & backlink signals</li>
+        <li>Content depth & keyword overlap</li>
+      </ul>
+    </div>
+    <div class="lp-graphic">
+      <div class="lp-mock">
+        <div class="lp-mock-bar">
+          <div class="lp-mock-dot" style="background:#ff5f57;"></div>
+          <div class="lp-mock-dot" style="background:#febc2e;"></div>
+          <div class="lp-mock-dot" style="background:#28c840;"></div>
+        </div>
+        <div style="font-size:0.6rem;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:rgba(255,255,255,0.25);margin-bottom:0.8rem;">Competitor Benchmark</div>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(176,32,37,0.08);border:1px solid rgba(176,32,37,0.2);border-radius:8px;padding:0.5rem 0.8rem;">
+            <span style="font-size:0.75rem;color:rgba(255,255,255,0.7);">yoursite.com</span>
+            <span style="font-size:1rem;font-weight:800;color:#7EC7A3;">87</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.5rem 0.8rem;">
+            <span style="font-size:0.75rem;color:rgba(255,255,255,0.4);">competitor1.com</span>
+            <span style="font-size:1rem;font-weight:800;color:#f5a623;">92</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.5rem 0.8rem;">
+            <span style="font-size:0.75rem;color:rgba(255,255,255,0.4);">competitor2.com</span>
+            <span style="font-size:1rem;font-weight:800;color:#ff6b6b;">74</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.5rem 0.8rem;">
+            <span style="font-size:0.75rem;color:rgba(255,255,255,0.4);">competitor3.com</span>
+            <span style="font-size:1rem;font-weight:800;color:#ff6b6b;">68</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<hr class="lp-divider"/>
+
+<!-- SECTION 3: AI Insights -->
+<div class="lp-section">
+  <div class="lp-row">
+    <div class="lp-text">
+      <div class="lp-eyebrow">AI-Powered Insights</div>
+      <div class="lp-heading">Not just data.<br><span>Actionable strategy.</span></div>
+      <p class="lp-desc">Gemini AI reads your full audit and writes a prioritized action plan — telling you exactly what to fix first and why.</p>
+      <ul class="lp-bullets">
+        <li>Executive summary of your SEO health</li>
+        <li>Prioritized fix list by impact</li>
+        <li>Keyword opportunity detection</li>
+        <li>Strategic recommendations vs competitors</li>
+        <li>GEO / AI visibility scoring</li>
+      </ul>
+    </div>
+    <div class="lp-graphic">
+      <div class="lp-mock">
+        <div class="lp-mock-bar">
+          <div class="lp-mock-dot" style="background:#ff5f57;"></div>
+          <div class="lp-mock-dot" style="background:#febc2e;"></div>
+          <div class="lp-mock-dot" style="background:#28c840;"></div>
+        </div>
+        <div style="font-size:0.6rem;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:rgba(255,255,255,0.25);margin-bottom:0.8rem;">AI Strategy Report</div>
+        <div style="display:flex;flex-direction:column;gap:0.6rem;">
+          <div style="background:rgba(176,32,37,0.08);border-left:3px solid #B02025;border-radius:0 8px 8px 0;padding:0.6rem 0.8rem;">
+            <div style="font-size:0.6rem;font-weight:700;color:#ff6b6b;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.2rem;">High Priority</div>
+            <div style="font-size:0.78rem;color:rgba(255,255,255,0.7);">Add meta description — currently missing</div>
+          </div>
+          <div style="background:rgba(245,166,35,0.06);border-left:3px solid #f5a623;border-radius:0 8px 8px 0;padding:0.6rem 0.8rem;">
+            <div style="font-size:0.6rem;font-weight:700;color:#f5a623;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.2rem;">Medium Priority</div>
+            <div style="font-size:0.78rem;color:rgba(255,255,255,0.7);">Compress images to improve LCP score</div>
+          </div>
+          <div style="background:rgba(126,199,163,0.06);border-left:3px solid #7EC7A3;border-radius:0 8px 8px 0;padding:0.6rem 0.8rem;">
+            <div style="font-size:0.6rem;font-weight:700;color:#7EC7A3;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.2rem;">Opportunity</div>
+            <div style="font-size:0.78rem;color:rgba(255,255,255,0.7);">Target keyword "SEO audit tool" — low competition</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<hr class="lp-divider"/>
+
+<!-- SECTION 4: GEO / AI Visibility -->
+<div class="lp-section" style="border-bottom:none;">
+  <div class="lp-row reverse">
+    <div class="lp-text">
+      <div class="lp-eyebrow">GEO & AI Visibility</div>
+      <div class="lp-heading">Rank in ChatGPT,<br><span>Gemini & Perplexity.</span></div>
+      <p class="lp-desc">Search is shifting to AI. RankSpyAI scores how likely your site is to be cited by LLMs — and what's stopping it.</p>
+      <ul class="lp-bullets">
+        <li>AI crawler access check (GPTBot, ClaudeBot)</li>
+        <li>LLMs.txt presence & configuration</li>
+        <li>E-E-A-T signal detection</li>
+        <li>Citability score out of 100</li>
+        <li>Structured data for AI readability</li>
+      </ul>
+    </div>
+    <div class="lp-graphic">
+      <div class="lp-mock">
+        <div class="lp-mock-bar">
+          <div class="lp-mock-dot" style="background:#ff5f57;"></div>
+          <div class="lp-mock-dot" style="background:#febc2e;"></div>
+          <div class="lp-mock-dot" style="background:#28c840;"></div>
+        </div>
+        <div style="margin-bottom:1rem;">
+          <div class="lp-mock-score" style="color:#B02025;">42</div>
+          <div style="font-size:0.7rem;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.12em;">GEO Visibility Score</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.45rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:0.72rem;color:rgba(255,255,255,0.45);">GPTBot access</span>
+            <span style="font-size:0.72rem;color:#7EC7A3;font-weight:700;">✓ Allowed</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:0.72rem;color:rgba(255,255,255,0.45);">ClaudeBot access</span>
+            <span style="font-size:0.72rem;color:#7EC7A3;font-weight:700;">✓ Allowed</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:0.72rem;color:rgba(255,255,255,0.45);">LLMs.txt</span>
+            <span style="font-size:0.72rem;color:#ff6b6b;font-weight:700;">✗ Missing</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:0.72rem;color:rgba(255,255,255,0.45);">E-E-A-T signals</span>
+            <span style="font-size:0.72rem;color:#f5a623;font-weight:700;">⚠ Weak</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:0.72rem;color:rgba(255,255,255,0.45);">Structured data</span>
+            <span style="font-size:0.72rem;color:#7EC7A3;font-weight:700;">✓ Present</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<hr class="lp-divider"/>
+
+<!-- SECTION 5: Switch & Download -->
+<div class="lp-section" style="border-bottom:none;">
+  <div class="lp-row">
+    <div class="lp-text">
+      <div class="lp-eyebrow">Results &amp; Reports</div>
+      <div class="lp-heading">Two reports.<br><span>One click away.</span></div>
+      <p class="lp-desc">After your analysis runs, switch between your full SEO audit and the competitor benchmark table instantly. Download everything as a CSV.</p>
+      <ul class="lp-bullets">
+        <li>Switch between SEO Analysis and Competitor Intel views</li>
+        <li>Download full competitor table as CSV</li>
+        <li>Executive AI summary in every report</li>
+        <li>Keyword opportunity breakdown</li>
+        <li>Prioritized action plan by impact</li>
+      </ul>
+    </div>
+    <div class="lp-graphic">
+      <div class="lp-mock">
+        <div class="lp-mock-bar">
+          <div class="lp-mock-dot" style="background:#ff5f57;"></div>
+          <div class="lp-mock-dot" style="background:#febc2e;"></div>
+          <div class="lp-mock-dot" style="background:#28c840;"></div>
+        </div>
+        <div style="font-size:0.55rem;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:rgba(255,255,255,0.2);margin-bottom:0.8rem;">Switch Results View</div>
+        <div style="display:flex;gap:0.5rem;margin-bottom:1.2rem;">
+          <div style="flex:1;background:#B02025;border-radius:50px;padding:0.5rem 0;text-align:center;font-size:0.65rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#fff;">SEO Analysis</div>
+          <div style="flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:50px;padding:0.5rem 0;text-align:center;font-size:0.65rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.4);">Competitor Intel</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:0.8rem 1rem;margin-bottom:0.6rem;">
+          <div style="font-size:0.6rem;font-weight:700;color:#B02025;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.3rem;">SEO Score</div>
+          <div style="font-size:1.8rem;font-weight:900;color:#7EC7A3;line-height:1;">87<span style="font-size:0.8rem;color:rgba(255,255,255,0.25);font-weight:400;">/100</span></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;background:rgba(126,199,163,0.06);border:1px solid rgba(126,199,163,0.15);border-radius:8px;padding:0.55rem 1rem;">
+          <span style="font-size:0.65rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#7EC7A3;">⬇ Download CSV Report</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+        # ── FAQ Section ──
+        st.markdown("""
+<div style="padding:4rem 0 2rem;text-align:center;">
+  <div style="font-size:0.65rem;font-weight:800;letter-spacing:0.22em;text-transform:uppercase;color:#B02025;margin-bottom:0.6rem;">FAQ</div>
+  <div style="font-family:'Barlow Condensed',sans-serif;font-size:clamp(1.8rem,3vw,2.6rem);font-weight:800;color:#ffffff;line-height:1.1;margin-bottom:0.5rem;">Frequently asked <span style="color:#B02025;">questions.</span></div>
+  <div style="font-size:0.88rem;color:rgba(255,255,255,0.35);margin-bottom:1rem;">Everything you need to know about RankSpyAI.</div>
+</div>
+""", unsafe_allow_html=True)
+
+        faqs = [
+            ("What is RankSpyAI?",
+             "RankSpyAI is a free AI-powered SEO audit and competitor intelligence tool. It analyzes your website, gives you a 100-point SEO score, identifies technical issues, and shows you exactly how you stack up against competitors — all powered by Gemini AI."),
+            ("How does the SEO Audit work?",
+             "Enter your URL and target keyword, then click Analyze SEO. RankSpyAI fetches your page, scans 70+ SEO factors including meta tags, Core Web Vitals, schema markup, heading structure, internal links, and more — then generates a prioritized action plan."),
+            ("What does Find Competitors do?",
+             "Find Competitors uses Serper API to pull real Google SERP data for your keyword, then Gemini AI identifies your actual competitors. You get a side-by-side SEO score comparison showing where you are winning and where you are losing."),
+            ("What is the GEO / AI Visibility score?",
+             "GEO stands for Generative Engine Optimization — how well your site is optimized to appear in AI-powered search engines like ChatGPT, Gemini, and Perplexity. RankSpyAI checks your AI crawler access, LLMs.txt file, E-E-A-T signals, and citability."),
+            ("Is it really free?",
+             "Yes. You get 30 free analyses shared across all users. For unlimited access, simply add your own free API keys (Serper and Gemini are both free to get) in the Bring Your Own API Keys section."),
+            ("What API keys do I need for unlimited access?",
+             "You need a Serper API key (free at serper.dev) and a Gemini API key (free at aistudio.google.com). Optionally add a Google PageSpeed API key for detailed performance metrics. Keys are stored only in your browser session and never saved."),
+            ("How is this different from other SEO tools?",
+             "Most SEO tools give you raw data. RankSpyAI uses Gemini AI to interpret that data and write a strategic action plan specific to your site and keyword. It also combines traditional SEO scoring with GEO/AI visibility — something most tools do not offer yet."),
+        ]
+
+        for q, a in faqs:
+            with st.expander(q):
+                st.markdown(f'<div style="font-size:0.88rem;color:rgba(255,255,255,0.55);line-height:1.7;padding:0.3rem 0;">{a}</div>', unsafe_allow_html=True)
+
+        st.markdown("<div style='height:3rem'></div>", unsafe_allow_html=True)
