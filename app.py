@@ -1503,7 +1503,7 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
     border: none;
     border-bottom: 1px solid rgba(176,32,37,0.2);
     border-radius: 0;
-    padding: 4rem 2.5rem 3rem;
+    padding: 1.6rem 2.5rem 1.4rem;
     margin: 0 -2.5rem 2rem;
     position: relative; overflow: hidden;
     animation: fadeInUp 0.8s ease-out both;
