@@ -2792,16 +2792,38 @@ if not analyze_clicked and not competitors_clicked:
 }
 
 @media (max-width: 768px) {
+    /* Hero */
+    .hero-header { padding: 1.2rem 1rem 1rem !important; margin: 0 -1rem 1rem !important; }
+    .hero-title { font-size: 2.8rem !important; }
+    .hero-sub { font-size: 0.8rem !important; }
+    .hero-badges { gap: 0.4rem !important; }
+    .hero-badge { font-size: 0.6rem !important; padding: 5px 10px !important; }
+
+    /* Input card */
+    .input-card { padding: 1.2rem 1rem 1rem !important; }
+
+    /* Marketing sections */
     .lp-row { flex-direction: column !important; gap: 1.5rem !important; }
     .lp-row.reverse { flex-direction: column !important; }
     .lp-graphic { width: 100% !important; }
     .lp-mock { max-width: 100% !important; }
-    .lp-heading { font-size: 1.8rem !important; }
+    .lp-heading { font-size: 1.6rem !important; }
+    .lp-desc { font-size: 0.85rem !important; }
+    .lp-section { padding: 2rem 0 1.5rem !important; }
+    .lp-bullet { font-size: 0.82rem !important; }
+
+    /* Streamlit columns — stack on mobile */
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
     [data-testid="stHorizontalBlock"] > [data-testid="column"] {
         min-width: 100% !important;
         flex: 1 1 100% !important;
     }
+
+    /* Ticker */
+    .ticker-wrap { font-size: 0.6rem !important; }
+
+    /* General spacing */
+    [data-testid="block-container"] { padding-left: 1rem !important; padding-right: 1rem !important; }
 }
 </style>
 
