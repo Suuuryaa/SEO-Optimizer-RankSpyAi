@@ -1,5 +1,12 @@
 import streamlit as st
 import pandas as pd
+
+st.set_page_config(
+    page_title="SEO Intelligence Dashboard",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 import plotly.express as px
 import plotly.graph_objects as go
 import time
@@ -1323,15 +1330,6 @@ def _render_comp_results(d):
 """, unsafe_allow_html=True)
 
 
-# ==================== PAGE CONFIG ====================
-
-st.set_page_config(
-    page_title="SEO Intelligence Dashboard",
-    page_icon="🎯",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
 # ==================== PREMIUM CSS ====================
 st.markdown("""
 <style>
@@ -2153,6 +2151,335 @@ with col_btn2:
 _has_seo  = st.session_state.seo_data is not None
 _has_comp = st.session_state.comp_data is not None
 
+# ==================== LANDING SECTIONS (shown only when no results) ====================
+
+if not _has_seo and not _has_comp and not analyze_clicked and not competitors_clicked:
+    st.markdown("""
+<style>
+/* ── Landing page light sections ── */
+.lp-wrapper {
+    margin: 3rem -2.5rem 0;
+    font-family: 'Space Grotesk', sans-serif;
+}
+.lp-section {
+    display: flex;
+    align-items: center;
+    gap: 4rem;
+    padding: 5rem 4rem;
+    background: #ffffff;
+    border-top: 1px solid #f0f0f0;
+}
+.lp-section.alt {
+    background: #f8fafc;
+    flex-direction: row-reverse;
+}
+.lp-col-text { flex: 1; min-width: 0; }
+.lp-col-visual { flex: 1; min-width: 0; }
+.lp-eyebrow {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.2em;
+    text-transform: uppercase; color: #00b894; margin-bottom: 0.8rem;
+}
+.lp-heading {
+    font-size: 2.2rem; font-weight: 800; color: #1a1a2e;
+    line-height: 1.2; margin: 0 0 1.2rem;
+}
+.lp-body {
+    font-size: 1.05rem; color: #555; font-weight: 500;
+    line-height: 1.6; margin-bottom: 1.4rem; max-width: 480px;
+}
+.lp-checks { list-style: none; padding: 0; margin: 0; }
+.lp-checks li {
+    display: flex; align-items: flex-start; gap: 0.7rem;
+    font-size: 0.95rem; color: #333; margin-bottom: 0.7rem; line-height: 1.4;
+}
+.lp-check-icon {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #00b894; color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.65rem; font-weight: 900; flex-shrink: 0; margin-top: 1px;
+}
+
+/* Score preview card */
+.score-preview-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
+    padding: 1.8rem; box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    max-width: 420px;
+}
+.score-card-url {
+    display: flex; align-items: center; gap: 0.6rem;
+    font-size: 0.88rem; font-weight: 600; color: #1a1a2e; margin-bottom: 0.3rem;
+}
+.score-card-sub { font-size: 0.75rem; color: #999; margin-bottom: 1.2rem; }
+.score-donut-row { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.2rem; }
+.score-donut {
+    width: 100px; height: 100px; border-radius: 50%;
+    background: conic-gradient(#00b894 0deg 306deg, #e5e7eb 306deg 360deg);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    position: relative;
+}
+.score-donut::after {
+    content: '';
+    position: absolute; inset: 12px;
+    background: #fff; border-radius: 50%;
+}
+.score-donut-num {
+    position: absolute; z-index: 1;
+    font-size: 1.6rem; font-weight: 900; color: #1a1a2e; line-height: 1;
+}
+.score-donut-of { font-size: 0.6rem; color: #999; margin-top: 2px; }
+.score-desc { font-size: 0.82rem; color: #444; line-height: 1.5; }
+.score-bars { display: flex; flex-direction: column; gap: 0.6rem; }
+.score-bar-row { display: flex; flex-direction: column; gap: 0.3rem; }
+.score-bar-label { font-size: 0.78rem; color: #333; font-weight: 500; }
+.score-bar-track { height: 6px; background: #f0f0f0; border-radius: 50px; overflow: hidden; }
+.score-bar-fill { height: 100%; border-radius: 50px; }
+
+/* Issues card */
+.issues-preview-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
+    overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); max-width: 420px;
+}
+.issues-card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1.2rem 1.5rem; border-bottom: 1px solid #f0f0f0;
+    font-size: 0.95rem; font-weight: 700; color: #1a1a2e;
+}
+.issues-count-badge {
+    background: #f3f4f6; border-radius: 50px; padding: 3px 10px;
+    font-size: 0.78rem; color: #555; font-weight: 600;
+}
+.issue-row {
+    display: flex; align-items: flex-start; gap: 0.8rem;
+    padding: 1rem 1.5rem; border-bottom: 1px solid #f9f9f9;
+}
+.issue-row-cat {
+    font-size: 0.82rem; font-weight: 700; color: #1a1a2e;
+    min-width: 90px; padding-top: 2px;
+}
+.issue-row-items { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
+.issue-item { display: flex; align-items: flex-start; gap: 0.5rem; }
+.issue-icon-error { font-size: 0.85rem; }
+.issue-icon-warn { font-size: 0.85rem; }
+.issue-text { font-size: 0.82rem; color: #444; line-height: 1.4; }
+
+/* Competitors preview card */
+.comp-preview-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
+    overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); max-width: 420px;
+}
+.comp-card-header {
+    padding: 1.2rem 1.5rem; border-bottom: 1px solid #f0f0f0;
+}
+.comp-card-title { font-size: 0.95rem; font-weight: 700; color: #1a1a2e; }
+.comp-card-sub { font-size: 0.78rem; color: #999; margin-top: 0.2rem; }
+.comp-table { width: 100%; border-collapse: collapse; }
+.comp-table th {
+    font-size: 0.72rem; font-weight: 600; color: #999;
+    text-align: left; padding: 0.6rem 1.5rem;
+    background: #f8fafc; border-bottom: 1px solid #f0f0f0;
+    text-transform: uppercase; letter-spacing: 0.08em;
+}
+.comp-table td {
+    font-size: 0.85rem; padding: 0.85rem 1.5rem;
+    border-bottom: 1px solid #f9f9f9; color: #333;
+}
+.comp-table td a { color: #2563eb; text-decoration: none; font-weight: 500; }
+.comp-table tr:last-child td { border-bottom: none; }
+
+/* FAQ section */
+.faq-section {
+    background: #fff; padding: 4rem; border-top: 1px solid #f0f0f0;
+    margin: 0 -2.5rem;
+}
+.faq-title {
+    font-size: 2rem; font-weight: 800; color: #1a1a2e;
+    text-align: center; margin-bottom: 2.5rem;
+}
+.faq-list { max-width: 800px; margin: 0 auto; }
+.faq-item {
+    border: 1px solid #e5e7eb; border-radius: 10px;
+    margin-bottom: 0.6rem; overflow: hidden;
+}
+.faq-item summary {
+    padding: 1.1rem 1.4rem; font-size: 0.95rem; font-weight: 600;
+    color: #1a1a2e; cursor: pointer; list-style: none;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after { content: '›'; font-size: 1.2rem; color: #999; transform: rotate(0deg); transition: transform 0.2s; }
+.faq-item[open] summary::after { transform: rotate(90deg); }
+.faq-body { padding: 0 1.4rem 1.1rem; font-size: 0.88rem; color: #555; line-height: 1.6; }
+
+/* Bottom CTA */
+.lp-bottom-cta {
+    background: #f8fafc; padding: 5rem 4rem;
+    border-top: 1px solid #f0f0f0; margin: 0 -2.5rem;
+    display: flex; gap: 4rem; align-items: center;
+}
+.lp-cta-left { flex: 1.5; }
+.lp-cta-right {
+    flex: 1; background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 16px; padding: 2rem;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+}
+.lp-cta-right-title { font-size: 1.3rem; font-weight: 800; color: #1a1a2e; margin-bottom: 0.6rem; }
+.lp-cta-right-sub { font-size: 0.88rem; color: #666; margin-bottom: 1.2rem; line-height: 1.5; }
+</style>
+
+<div class="lp-wrapper">
+
+<!-- Section 1: Score -->
+<div class="lp-section">
+  <div class="lp-col-text">
+    <div class="lp-eyebrow">On-Page SEO</div>
+    <div class="lp-heading">Instantly Score Your<br>On-Page SEO</div>
+    <div class="lp-body"><strong>Drop in a URL. Get a real-time on-site SEO report with actionable insights — no setup, no signup, no waiting.</strong></div>
+    <ul class="lp-checks">
+      <li><div class="lp-check-icon">✓</div>Get a fast SEO score and performance overview</li>
+      <li><div class="lp-check-icon">✓</div>Identify on-page SEO issues and ranking factors</li>
+      <li><div class="lp-check-icon">✓</div>Perfect for small business owners and marketers</li>
+      <li><div class="lp-check-icon">✓</div>Works on any URL — any industry, any site</li>
+    </ul>
+  </div>
+  <div class="lp-col-visual">
+    <div class="score-preview-card">
+      <div class="score-card-url">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00b894" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        https://yourwebsite.com/
+      </div>
+      <div class="score-card-sub">SEO Check</div>
+      <div class="score-donut-row">
+        <div class="score-donut">
+          <div class="score-donut-num">85<div class="score-donut-of">of 100</div></div>
+        </div>
+        <div class="score-desc">This page received an SEO score of <strong>85 out of 100</strong>. There are <strong>1 important issue(s)</strong> that should be fixed to improve your website's ranking and enhance its overall performance.</div>
+      </div>
+      <div class="score-bars">
+        <div class="score-bar-row">
+          <div class="score-bar-label">1 Critical</div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:7%;background:#ef4444;"></div></div>
+        </div>
+        <div class="score-bar-row">
+          <div class="score-bar-label">3 Warnings</div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:23%;background:#f59e0b;"></div></div>
+        </div>
+        <div class="score-bar-row">
+          <div class="score-bar-label">13 Passed</div>
+          <div class="score-bar-track"><div class="score-bar-fill" style="width:90%;background:#00b894;"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Section 2: Issues -->
+<div class="lp-section alt">
+  <div class="lp-col-text">
+    <div class="lp-eyebrow">Issue Detection</div>
+    <div class="lp-heading">Find &amp; Fix Critical<br>SEO Issues Fast</div>
+    <div class="lp-body"><strong>Stop guessing. Get a focused SEO analysis of what's holding your page back.</strong></div>
+    <ul class="lp-checks">
+      <li><div class="lp-check-icon">✓</div>Identify missing or duplicate meta descriptions and title tags</li>
+      <li><div class="lp-check-icon">✓</div>Catch broken internal and external links</li>
+      <li><div class="lp-check-icon">✓</div>See indexability problems and on-page errors</li>
+      <li><div class="lp-check-icon">✓</div>Get clear recommendations for improvement</li>
+    </ul>
+  </div>
+  <div class="lp-col-visual">
+    <div class="issues-preview-card">
+      <div class="issues-card-header">
+        Issues Overview
+        <span class="issues-count-badge">3 Issues</span>
+      </div>
+      <div class="issue-row">
+        <div class="issue-row-cat">Content</div>
+        <div class="issue-row-items">
+          <div class="issue-item"><span class="issue-icon-error">🔴</span><span class="issue-text">Low text-to-code ratio (1.32%) — increase content relative to code.</span></div>
+          <div class="issue-item"><span class="issue-icon-warn">🔔</span><span class="issue-text">Content length could be improved (430 words) — aim for 800+ words.</span></div>
+        </div>
+      </div>
+      <div class="issue-row">
+        <div class="issue-row-cat">Title</div>
+        <div class="issue-row-items">
+          <div class="issue-item"><span class="issue-icon-warn">🔔</span><span class="issue-text">Meta title is a bit long (61 characters) — aim for 50–60 characters.</span></div>
+        </div>
+      </div>
+      <div class="issue-row" style="border-bottom:none;">
+        <div class="issue-row-cat">Description</div>
+        <div class="issue-row-items">
+          <div class="issue-item"><span class="issue-icon-warn">🔔</span><span class="issue-text">Meta description is a bit short (131 characters) — aim for 140–160 characters.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Section 3: Competitors -->
+<div class="lp-section">
+  <div class="lp-col-text">
+    <div class="lp-eyebrow">Competitor Intelligence</div>
+    <div class="lp-heading">Benchmark Against<br>the Competition</div>
+    <div class="lp-body"><strong>Understand how your page stacks up — and how to beat them.</strong></div>
+    <ul class="lp-checks">
+      <li><div class="lp-check-icon">✓</div>AI automatically identifies your real competitors</li>
+      <li><div class="lp-check-icon">✓</div>See how competitors optimize their metadata</li>
+      <li><div class="lp-check-icon">✓</div>Find ranking gaps you can close quickly</li>
+      <li><div class="lp-check-icon">✓</div>Learn from what's working for others in your niche</div></li>
+    </ul>
+  </div>
+  <div class="lp-col-visual">
+    <div class="comp-preview-card">
+      <div class="comp-card-header">
+        <div class="comp-card-title">Main Organic Competitors</div>
+        <div class="comp-card-sub">Competitive domains displayed depending on competition level.</div>
+      </div>
+      <table class="comp-table">
+        <thead><tr><th>Domain</th><th>Com. Keywords</th><th>Com. Level</th></tr></thead>
+        <tbody>
+          <tr><td><a href="#">competitor1.com</a></td><td>12,450</td><td>41%</td></tr>
+          <tr><td><a href="#">competitor2.com</a></td><td>9,182</td><td>34%</td></tr>
+          <tr><td><a href="#">competitor3.com</a></td><td>6,731</td><td>28%</td></tr>
+          <tr><td><a href="#">competitor4.com</a></td><td>4,209</td><td>19%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- FAQ -->
+<div class="faq-section">
+  <div class="faq-title">SEO Checker FAQ</div>
+  <div class="faq-list">
+    <details class="faq-item">
+      <summary>Is this SEO Checker free to use?</summary>
+      <div class="faq-body">Yes — you get a set number of free analyses per day. For unlimited access, bring your own API keys (Serper + Gemini) — both have free tiers.</div>
+    </details>
+    <details class="faq-item">
+      <summary>What does the SEO Checker analyze?</summary>
+      <div class="faq-body">It analyzes 15+ on-page signals including title tags, meta descriptions, H1 headings, keyword usage, content depth, internal/external links, image alt text, HTTPS, mobile viewport, schema markup, Core Web Vitals, and more.</div>
+    </details>
+    <details class="faq-item">
+      <summary>How does AI Competitor Analysis work?</summary>
+      <div class="faq-body">Gemini AI identifies your real competitors from just your URL and keyword — it understands your industry and market automatically, then scrapes and scores each competitor side-by-side.</div>
+    </details>
+    <details class="faq-item">
+      <summary>How often should I run an SEO check?</summary>
+      <div class="faq-body">Run it after every significant content update, after fixing technical issues, or monthly as a health check. Regular audits help you track improvement over time.</div>
+    </details>
+    <details class="faq-item">
+      <summary>What does the SEO score mean?</summary>
+      <div class="faq-body">The score (0–100) measures how well your page is optimized across all ranking signals. 80+ is Excellent, 70–79 is Good, 60–69 is Fair, below 60 needs work.</div>
+    </details>
+    <details class="faq-item">
+      <summary>What is the GEO Score?</summary>
+      <div class="faq-body">GEO (Generative Engine Optimization) Score measures how visible your site is to AI tools like ChatGPT, Perplexity, and Google AI Overviews. It checks E-E-A-T signals, llms.txt, schema markup, and AI crawler access.</div>
+    </details>
+  </div>
+</div>
+
+</div>
+""", unsafe_allow_html=True)
+
 if _has_seo or _has_comp:
     st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:0.6rem;font-weight:800;color:rgba(255,255,255,0.25);
@@ -2195,33 +2522,33 @@ if analyze_clicked:
             loading_card = st.empty()
             progress_bar = st.progress(0)
 
+            _step_labels_map = {
+                1: "Fetching Your Website",
+                2: "Extracting SEO Elements",
+                3: "Running Technical Audit",
+                4: "Calculating SEO Score",
+                5: "Fetching Core Web Vitals",
+            }
             def _set_step(label, pct, step=1, total=5):
-                steps_html = "".join([
-                    f'<div style="width:8px;height:8px;border-radius:50%;background:'
-                    f'{"#B02025" if i < step else ("rgba(176,32,37,0.4)" if i == step else "rgba(255,255,255,0.1)")};">'
-                    f'</div>' for i in range(1, total+1)
-                ])
+                main_label = _step_labels_map.get(step, label)
                 loading_card.markdown(f"""
-<div style="background:#0d0d0d;border:1px solid rgba(176,32,37,0.2);border-radius:14px;
-            padding:1.4rem 2rem;margin:0.8rem 0;display:flex;align-items:center;gap:1.5rem;">
-    <div style="flex-shrink:0;">
-        <div style="width:44px;height:44px;border-radius:50%;
-                    border:2px solid rgba(176,32,37,0.3);
-                    border-top-color:#B02025;
-                    animation:spin 1s linear infinite;
-                    display:flex;align-items:center;justify-content:center;">
+<div style="background:#ffffff;border:none;padding:4rem 2rem;text-align:center;margin:0 -2.5rem;">
+    <div style="max-width:520px;margin:0 auto;">
+        <div style="font-size:0.75rem;font-weight:600;color:#888;letter-spacing:0.1em;
+                    text-transform:uppercase;margin-bottom:1rem;">
+            Testing SEO Checker — Step {step} of {total}
         </div>
-    </div>
-    <div style="flex:1;">
-        <div style="font-size:0.68rem;font-weight:700;letter-spacing:0.15em;
-                    text-transform:uppercase;color:#B02025;margin-bottom:0.3rem;">
-            Analyzing — Step {step} of {total}
+        <div style="background:#f0f0f0;height:4px;border-radius:50px;overflow:hidden;margin-bottom:2.5rem;">
+            <div style="background:linear-gradient(90deg,#00b894,#00cec9);height:100%;
+                        border-radius:50px;width:{pct}%;transition:width 0.4s ease;"></div>
         </div>
-        <div style="font-size:0.95rem;font-weight:600;color:rgba(255,255,255,0.85);">
+        <div style="font-size:1.6rem;font-weight:800;color:#1a1a2e;margin-bottom:0.6rem;">
+            {main_label}
+        </div>
+        <div style="font-size:0.9rem;color:#888;line-height:1.5;">
             {label}
         </div>
     </div>
-    <div style="display:flex;gap:6px;align-items:center;">{steps_html}</div>
 </div>
 """, unsafe_allow_html=True)
                 progress_bar.progress(pct)
