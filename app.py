@@ -1424,7 +1424,7 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
 .kpi-label { font-family: 'Inter', 'Outfit', sans-serif !important; }
 .main > div { padding-top: 0 !important; }
 .block-container {
-    padding: 0 2.5rem 4rem !important;
+    padding: 0 2.5rem 2rem !important;
     max-width: 100% !important;
     margin: 0 !important;
 }
@@ -1503,8 +1503,8 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
     border: none;
     border-bottom: 1px solid rgba(176,32,37,0.2);
     border-radius: 0;
-    padding: 4rem 2.5rem 3rem;
-    margin: 0 -2.5rem 2rem;
+    padding: 2.2rem 2.5rem 1.8rem;
+    margin: 0 -2.5rem 1rem;
     position: relative; overflow: hidden;
     animation: fadeInUp 0.8s ease-out both;
 }
@@ -1532,7 +1532,7 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
     margin-bottom: 1.2rem; animation: fadeInLeft 0.6s 0.1s ease-out both;
 }
 .hero-title {
-    font-size: clamp(3.2rem, 6vw, 5.5rem);
+    font-size: clamp(2.2rem, 4vw, 3.8rem);
     font-family: 'Barlow Condensed', 'Outfit', sans-serif !important;
     font-weight: 900; line-height: 0.95;
     letter-spacing: -1px;
@@ -1548,13 +1548,13 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
     animation: gradient-shift 4s ease infinite;
 }
 .hero-sub {
-    font-size: 1.15rem; color: rgba(255,255,255,0.5);
-    font-weight: 400; line-height: 1.6;
-    max-width: 560px; margin: 1rem 0 0;
+    font-size: 1rem; color: rgba(255,255,255,0.5);
+    font-weight: 400; line-height: 1.5;
+    max-width: 560px; margin: 0.6rem 0 0;
     animation: fadeInLeft 0.7s 0.35s ease-out both;
 }
 .hero-badges {
-    display: flex; gap: 0.5rem; margin-top: 2rem; flex-wrap: wrap;
+    display: flex; gap: 0.4rem; margin-top: 1.2rem; flex-wrap: wrap;
     animation: fadeInUp 0.7s 0.5s ease-out both;
 }
 .hero-badge {
@@ -1939,16 +1939,31 @@ st.markdown("""
     <div class="hero-line hero-line-2"></div>
     <div class="hero-line hero-line-3"></div>
     <div class="hero-glow-bar"></div>
-    <div class="hero-eyebrow">AI-Powered SEO Intelligence</div>
-    <div class="hero-title">BOLD STRATEGY.<br><span class="hero-title-accent">STRIKING RESULTS.</span></div>
-    <p class="hero-sub">Analyze, benchmark, and outrank your competitors — powered by AI, driven by data.</p>
-    <div class="hero-badges">
-        <span class="hero-badge">Real-Time Intelligence</span>
-        <span class="hero-badge">Competitive Benchmarking</span>
-        <span class="hero-badge">Technical SEO Audit</span>
-        <span class="hero-badge">AI-Powered Insights</span>
-        <span class="hero-badge">Enterprise-Grade Analysis</span>
-        <span class="hero-badge">Strategic Action Plans</span>
+    <div style="display:flex;align-items:center;gap:3rem;position:relative;z-index:1;">
+        <div style="flex:1.1;min-width:0;">
+            <div class="hero-eyebrow">AI-Powered SEO Intelligence</div>
+            <div class="hero-title">RANK HIGHER.<br><span class="hero-title-accent">OUTRANK EVERYONE.</span></div>
+            <p class="hero-sub">Paste a URL, pick a keyword — get a full AI-powered SEO audit, competitor benchmarks, and an action plan in minutes.</p>
+            <div class="hero-badges">
+                <span class="hero-badge">SEO Audit</span>
+                <span class="hero-badge">Competitor Analysis</span>
+                <span class="hero-badge">Core Web Vitals</span>
+                <span class="hero-badge">AI Report</span>
+                <span class="hero-badge">GEO Score</span>
+            </div>
+        </div>
+        <div style="flex:0.9;min-width:0;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:1.4rem 1.6rem;">
+            <div style="font-size:0.6rem;font-weight:800;color:#B02025;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:1rem;">Quick Analysis</div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.4);font-weight:600;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.3rem;">Website URL</div>
+            <div style="background:#111;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:0.65rem 1rem;margin-bottom:0.8rem;font-size:0.85rem;color:rgba(255,255,255,0.25);">https://example.com</div>
+            <div style="font-size:0.72rem;color:rgba(255,255,255,0.4);font-weight:600;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.3rem;">Target Keyword</div>
+            <div style="background:#111;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:0.65rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:rgba(255,255,255,0.25);">e.g. running shoes</div>
+            <div style="background:#B02025;border-radius:50px;padding:0.7rem;text-align:center;font-size:0.82rem;font-weight:700;color:#fff;letter-spacing:0.1em;text-transform:uppercase;">🔍 Analyze SEO</div>
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.8rem;justify-content:center;">
+                <div style="width:6px;height:6px;border-radius:50%;background:#7EC7A3;box-shadow:0 0 6px #7EC7A3;"></div>
+                <span style="font-size:0.65rem;color:rgba(255,255,255,0.3);">Free to use · No signup required</span>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -1963,7 +1978,7 @@ st.markdown("""
         <span class="ticker-item">Content Scoring</span><span class="ticker-dot">✦</span>
         <span class="ticker-item">Schema Markup</span><span class="ticker-dot">✦</span>
         <span class="ticker-item">Core Web Vitals</span><span class="ticker-dot">✦</span>
-        <span class="ticker-item">Backlink Analysis</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">GEO Score</span><span class="ticker-dot">✦</span>
         <span class="ticker-item">SEO Analysis</span><span class="ticker-dot">✦</span>
         <span class="ticker-item">Competitor Intelligence</span><span class="ticker-dot">✦</span>
         <span class="ticker-item">Technical Audit</span><span class="ticker-dot">✦</span>
@@ -1973,7 +1988,7 @@ st.markdown("""
         <span class="ticker-item">Content Scoring</span><span class="ticker-dot">✦</span>
         <span class="ticker-item">Schema Markup</span><span class="ticker-dot">✦</span>
         <span class="ticker-item">Core Web Vitals</span><span class="ticker-dot">✦</span>
-        <span class="ticker-item">Backlink Analysis</span><span class="ticker-dot">✦</span>
+        <span class="ticker-item">GEO Score</span><span class="ticker-dot">✦</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
