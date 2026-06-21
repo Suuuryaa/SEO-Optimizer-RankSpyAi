@@ -3010,8 +3010,17 @@ if not analyze_clicked and not competitors_clicked:
              "Most SEO tools give you raw data. RankSpyAI uses Gemini AI to interpret that data and write a strategic action plan specific to your site and keyword. It also combines traditional SEO scoring with GEO/AI visibility — something most tools do not offer yet."),
         ]
 
+        faq_html = '<div style="max-width:780px;margin:0 auto;">'
         for q, a in faqs:
-            with st.expander(q):
-                st.markdown(f'<div style="font-size:0.88rem;color:rgba(255,255,255,0.55);line-height:1.7;padding:0.3rem 0;">{a}</div>', unsafe_allow_html=True)
+            faq_html += f"""
+<details style="border:1px solid rgba(255,255,255,0.08);border-radius:10px;margin-bottom:0.6rem;background:#0d0d0d;padding:0;overflow:hidden;">
+  <summary style="padding:1rem 1.2rem;font-size:0.95rem;font-weight:600;color:#fff;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+    {q}
+    <span style="font-size:1.1rem;color:#B02025;margin-left:1rem;flex-shrink:0;">＋</span>
+  </summary>
+  <div style="padding:0 1.2rem 1rem;font-size:0.87rem;color:rgba(255,255,255,0.5);line-height:1.75;border-top:1px solid rgba(255,255,255,0.05);padding-top:0.8rem;">{a}</div>
+</details>"""
+        faq_html += '</div>'
+        st.markdown(faq_html, unsafe_allow_html=True)
 
         st.markdown("<div style='height:3rem'></div>", unsafe_allow_html=True)
