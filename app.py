@@ -2010,7 +2010,7 @@ if "mobile_mode" not in st.session_state:
     st.session_state.mobile_mode = False
 
 # Tiny corner buttons
-_acol1, _acol_mob, _acol2 = st.columns([19, 1, 1])
+_acol1, _acol_mob, _acol2 = st.columns([18, 1, 1])
 with _acol_mob:
     _mob_icon = "📱"
     if st.button(_mob_icon, key="mobile_btn", help="Toggle smartphone view"):
@@ -2032,10 +2032,11 @@ if st.session_state.mobile_mode:
 .stColumns { flex-wrap: wrap !important; }
 .stColumn { min-width: 100% !important; flex: 100% !important; }
 </style>
-<div style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999;
+<div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;
     background:#B02025;color:#fff;font-size:0.65rem;font-weight:800;letter-spacing:0.12em;
-    text-transform:uppercase;padding:0.3rem 0.9rem;border-radius:50px;pointer-events:none;">
-  📱 Smartphone View
+    text-transform:uppercase;padding:0.35rem 1rem;border-radius:50px;pointer-events:none;
+    box-shadow:0 4px 20px rgba(176,32,37,0.5);">
+  📱 Smartphone View — Active
 </div>
 """, unsafe_allow_html=True)
 
@@ -2788,6 +2789,19 @@ if not analyze_clicked and not competitors_clicked:
 }
 .lp-divider {
     border: none; border-top: 1px solid rgba(255,255,255,0.05); margin: 0;
+}
+
+@media (max-width: 768px) {
+    .lp-row { flex-direction: column !important; gap: 1.5rem !important; }
+    .lp-row.reverse { flex-direction: column !important; }
+    .lp-graphic { width: 100% !important; }
+    .lp-mock { max-width: 100% !important; }
+    .lp-heading { font-size: 1.8rem !important; }
+    [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        min-width: 100% !important;
+        flex: 1 1 100% !important;
+    }
 }
 </style>
 
