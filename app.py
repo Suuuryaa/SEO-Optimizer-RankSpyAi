@@ -2005,8 +2005,40 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Tiny corner button — one button, toggles between 🔒 and 🔓
-_acol1, _acol2 = st.columns([20, 1])
+# Mobile preview toggle
+if "mobile_mode" not in st.session_state:
+    st.session_state.mobile_mode = False
+
+# Tiny corner buttons
+_acol1, _acol_mob, _acol2 = st.columns([19, 1, 1])
+with _acol_mob:
+    _mob_icon = "📱"
+    if st.button(_mob_icon, key="mobile_btn", help="Toggle smartphone view"):
+        st.session_state.mobile_mode = not st.session_state.mobile_mode
+        st.rerun()
+
+if st.session_state.mobile_mode:
+    st.markdown("""
+<style>
+[data-testid="block-container"] {
+    max-width: 390px !important;
+    margin: 0 auto !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    border-left: 1px solid rgba(255,255,255,0.06) !important;
+    border-right: 1px solid rgba(255,255,255,0.06) !important;
+    min-height: 100vh !important;
+}
+.stColumns { flex-wrap: wrap !important; }
+.stColumn { min-width: 100% !important; flex: 100% !important; }
+</style>
+<div style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999;
+    background:#B02025;color:#fff;font-size:0.65rem;font-weight:800;letter-spacing:0.12em;
+    text-transform:uppercase;padding:0.3rem 0.9rem;border-radius:50px;pointer-events:none;">
+  📱 Smartphone View
+</div>
+""", unsafe_allow_html=True)
+
 with _acol2:
     _btn_icon = "🔓" if st.session_state.is_admin else "🔒"
     if st.button(_btn_icon, key="admin_btn", help="Admin"):
