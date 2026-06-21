@@ -1810,11 +1810,12 @@ hr { border-color: rgba(255,255,255,0.07) !important; margin: 2rem 0 !important;
    DEMO BADGE
 ═══════════════════════════════════════════════ */
 .demo-badge {
-    display: inline-flex; align-items: center; gap: 10px;
+    display: inline-flex; align-items: center; gap: 8px;
     background: #0a0a0a;
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 50px; padding: 0.6rem 1.2rem;
-    font-size: 0.82rem; color: rgba(255,255,255,0.55); font-weight: 500;
+    border-radius: 50px; padding: 0.5rem 1rem;
+    font-size: 0.75rem; color: rgba(255,255,255,0.55); font-weight: 500;
+    white-space: nowrap;
 }
 .demo-dot {
     width: 7px; height: 7px; border-radius: 50%;
@@ -2009,14 +2010,6 @@ st.markdown("""
 if "mobile_mode" not in st.session_state:
     st.session_state.mobile_mode = False
 
-# Tiny corner buttons
-_acol1, _acol_mob, _acol2 = st.columns([18, 1, 1])
-with _acol_mob:
-    _mob_icon = "📱"
-    if st.button(_mob_icon, key="mobile_btn", help="Toggle smartphone view"):
-        st.session_state.mobile_mode = not st.session_state.mobile_mode
-        st.rerun()
-
 if st.session_state.mobile_mode:
     st.markdown("""
 <style>
@@ -2032,14 +2025,47 @@ if st.session_state.mobile_mode:
 .stColumns { flex-wrap: wrap !important; }
 .stColumn { min-width: 100% !important; flex: 100% !important; }
 </style>
-<div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;
-    background:#B02025;color:#fff;font-size:0.65rem;font-weight:800;letter-spacing:0.12em;
-    text-transform:uppercase;padding:0.35rem 1rem;border-radius:50px;pointer-events:none;
-    box-shadow:0 4px 20px rgba(176,32,37,0.5);">
-  📱 Smartphone View — Active
+""", unsafe_allow_html=True)
+
+# Corner buttons — fixed position HTML so they never stack on mobile
+_mob_active = st.session_state.mobile_mode
+_mob_label = "📱 Mobile View" if not _mob_active else "📱 Exit Mobile"
+_corner_btns_html = f"""
+<style>
+#corner-btns {{ position:fixed; top:12px; right:16px; z-index:10000; display:flex; gap:8px; align-items:center; }}
+#corner-btns a {{
+    background:#111; border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.7);
+    font-size:0.65rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
+    padding:6px 12px; border-radius:50px; text-decoration:none; cursor:pointer;
+    white-space:nowrap;
+}}
+#corner-btns a:hover {{ background:#1a1a1a; color:#fff; }}
+#corner-btns a.active {{ background:rgba(176,32,37,0.2); border-color:rgba(176,32,37,0.5); color:#ff6b6b; }}
+</style>
+<div id="corner-btns">
+  <a href="?mobile_toggle=1" class="{'active' if _mob_active else ''}">{_mob_label}</a>
+</div>
+"""
+st.markdown(_corner_btns_html, unsafe_allow_html=True)
+
+# Handle mobile toggle via query param
+if st.query_params.get("mobile_toggle"):
+    st.session_state.mobile_mode = not st.session_state.mobile_mode
+    st.query_params.clear()
+    st.rerun()
+
+if st.session_state.mobile_mode:
+    st.markdown("""
+<div style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:9999;
+    background:#B02025;color:#fff;font-size:0.6rem;font-weight:800;letter-spacing:0.1em;
+    text-transform:uppercase;padding:0.3rem 0.85rem;border-radius:50px;pointer-events:none;
+    white-space:nowrap;box-shadow:0 4px 20px rgba(176,32,37,0.5);">
+  📱 Smartphone View Active
 </div>
 """, unsafe_allow_html=True)
 
+# Hidden admin button (top-right, small)
+_acol1, _acol2 = st.columns([20, 1])
 with _acol2:
     _btn_icon = "🔓" if st.session_state.is_admin else "🔒"
     if st.button(_btn_icon, key="admin_btn", help="Admin"):
