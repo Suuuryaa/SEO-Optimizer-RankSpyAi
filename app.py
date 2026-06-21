@@ -1464,7 +1464,11 @@ h1,h2,h3,h4 { font-family: 'Barlow Condensed', 'Outfit', sans-serif !important; 
 .stApp > div { position: relative; }
 html, body { overflow: hidden !important; height: 100% !important; }
 .stApp { overflow-y: auto !important; height: 100vh !important; }
-section { overflow: visible !important; height: auto !important; min-height: unset !important; }
+section[data-testid="stSidebar"] { overflow: hidden !important; }
+section:not([data-testid="stSidebar"]) { overflow: visible !important; height: auto !important; min-height: unset !important; }
+[data-testid="stAppViewContainer"] { overflow: visible !important; height: auto !important; }
+[data-testid="stVerticalBlock"] { overflow: visible !important; height: auto !important; }
+[data-testid="block-container"] { overflow: visible !important; height: auto !important; max-height: unset !important; }
 
 /* Animated dot-grid background */
 .stApp::before {
