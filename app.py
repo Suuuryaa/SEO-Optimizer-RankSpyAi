@@ -1926,6 +1926,65 @@ div[data-testid="stButton"]:has(button[key="toggle_compare"]) button {
     color: rgba(255,255,255,0.4) !important;
     border-radius: 8px !important;
 }
+
+/* ══════════════════════════════════════════════
+   LANDING PAGE SECTIONS
+══════════════════════════════════════════════ */
+.lp-wrapper { font-family: 'Space Grotesk', sans-serif; }
+.lp-section {
+    display: flex; align-items: center; gap: 4rem;
+    padding: 5rem 2rem; background: #ffffff;
+    border-top: 1px solid #f0f0f0; border-radius: 0;
+}
+.lp-section.alt { background: #f8fafc; flex-direction: row-reverse; }
+.lp-col-text { flex: 1; min-width: 0; }
+.lp-col-visual { flex: 1; min-width: 0; display: flex; justify-content: center; }
+.lp-eyebrow { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: #00b894; margin-bottom: 0.8rem; }
+.lp-heading { font-size: 2rem; font-weight: 800; color: #1a1a2e; line-height: 1.2; margin: 0 0 1.2rem; }
+.lp-body { font-size: 1rem; color: #555; font-weight: 500; line-height: 1.6; margin-bottom: 1.4rem; }
+.lp-checks { list-style: none; padding: 0; margin: 0; }
+.lp-checks li { display: flex; align-items: flex-start; gap: 0.7rem; font-size: 0.92rem; color: #333; margin-bottom: 0.7rem; line-height: 1.4; }
+.lp-check-icon { width: 20px; height: 20px; border-radius: 50%; background: #00b894; color: white; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: 900; flex-shrink: 0; margin-top: 1px; }
+.score-preview-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 1.8rem; box-shadow: 0 4px 24px rgba(0,0,0,0.08); width: 100%; max-width: 400px; }
+.score-card-url { display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; font-weight: 600; color: #1a1a2e; margin-bottom: 0.2rem; }
+.score-card-sub { font-size: 0.72rem; color: #999; margin-bottom: 1.2rem; }
+.score-donut-row { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.2rem; }
+.score-donut { width: 90px; height: 90px; border-radius: 50%; background: conic-gradient(#00b894 0deg 306deg, #e5e7eb 306deg 360deg); display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; }
+.score-donut::after { content: ''; position: absolute; inset: 11px; background: #fff; border-radius: 50%; }
+.score-donut-num { position: absolute; z-index: 1; text-align: center; }
+.score-donut-big { font-size: 1.5rem; font-weight: 900; color: #1a1a2e; display: block; line-height: 1; }
+.score-donut-of { font-size: 0.6rem; color: #999; }
+.score-desc { font-size: 0.8rem; color: #444; line-height: 1.5; }
+.score-bars { display: flex; flex-direction: column; gap: 0.6rem; }
+.score-bar-row { display: flex; flex-direction: column; gap: 0.25rem; }
+.score-bar-label { font-size: 0.75rem; color: #333; font-weight: 500; }
+.score-bar-track { height: 6px; background: #f0f0f0; border-radius: 50px; overflow: hidden; }
+.score-bar-fill { height: 100%; border-radius: 50px; }
+.issues-preview-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); width: 100%; max-width: 400px; }
+.issues-card-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.4rem; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; font-weight: 700; color: #1a1a2e; }
+.issues-count-badge { background: #f3f4f6; border-radius: 50px; padding: 2px 10px; font-size: 0.75rem; color: #555; font-weight: 600; }
+.issue-row { display: flex; align-items: flex-start; gap: 0.8rem; padding: 0.9rem 1.4rem; border-bottom: 1px solid #f9f9f9; }
+.issue-row-cat { font-size: 0.8rem; font-weight: 700; color: #1a1a2e; min-width: 80px; padding-top: 2px; }
+.issue-row-items { display: flex; flex-direction: column; gap: 0.45rem; flex: 1; }
+.issue-item { display: flex; align-items: flex-start; gap: 0.4rem; }
+.issue-text { font-size: 0.78rem; color: #444; line-height: 1.4; }
+.comp-preview-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); width: 100%; max-width: 400px; }
+.comp-card-header { padding: 1rem 1.4rem; border-bottom: 1px solid #f0f0f0; }
+.comp-card-title { font-size: 0.9rem; font-weight: 700; color: #1a1a2e; }
+.comp-card-sub { font-size: 0.72rem; color: #999; margin-top: 0.2rem; }
+.comp-table { width: 100%; border-collapse: collapse; }
+.comp-table th { font-size: 0.68rem; font-weight: 600; color: #999; text-align: left; padding: 0.55rem 1.4rem; background: #f8fafc; border-bottom: 1px solid #f0f0f0; text-transform: uppercase; letter-spacing: 0.08em; }
+.comp-table td { font-size: 0.82rem; padding: 0.8rem 1.4rem; border-bottom: 1px solid #f9f9f9; color: #333; }
+.comp-table td.comp-link { color: #2563eb; font-weight: 500; }
+.comp-table tr:last-child td { border-bottom: none; }
+.faq-section { background: #fff; padding: 4rem 2rem; border-top: 1px solid #f0f0f0; }
+.faq-title { font-size: 1.8rem; font-weight: 800; color: #1a1a2e; text-align: center; margin-bottom: 2rem; }
+.faq-list { max-width: 760px; margin: 0 auto; }
+.faq-item { border: 1px solid #e5e7eb; border-radius: 10px; margin-bottom: 0.5rem; overflow: hidden; background: #fff; }
+.faq-item summary { padding: 1rem 1.3rem; font-size: 0.92rem; font-weight: 600; color: #1a1a2e; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after { content: '›'; font-size: 1.2rem; color: #999; }
+.faq-body { padding: 0 1.3rem 1rem; font-size: 0.85rem; color: #555; line-height: 1.6; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -2154,179 +2213,7 @@ _has_comp = st.session_state.comp_data is not None
 # ==================== LANDING SECTIONS (shown only when no results) ====================
 
 if not _has_seo and not _has_comp and not analyze_clicked and not competitors_clicked:
-    st.markdown("""
-<style>
-/* ── Landing page light sections ── */
-.lp-wrapper {
-    margin: 3rem -2.5rem 0;
-    font-family: 'Space Grotesk', sans-serif;
-}
-.lp-section {
-    display: flex;
-    align-items: center;
-    gap: 4rem;
-    padding: 5rem 4rem;
-    background: #ffffff;
-    border-top: 1px solid #f0f0f0;
-}
-.lp-section.alt {
-    background: #f8fafc;
-    flex-direction: row-reverse;
-}
-.lp-col-text { flex: 1; min-width: 0; }
-.lp-col-visual { flex: 1; min-width: 0; }
-.lp-eyebrow {
-    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.2em;
-    text-transform: uppercase; color: #00b894; margin-bottom: 0.8rem;
-}
-.lp-heading {
-    font-size: 2.2rem; font-weight: 800; color: #1a1a2e;
-    line-height: 1.2; margin: 0 0 1.2rem;
-}
-.lp-body {
-    font-size: 1.05rem; color: #555; font-weight: 500;
-    line-height: 1.6; margin-bottom: 1.4rem; max-width: 480px;
-}
-.lp-checks { list-style: none; padding: 0; margin: 0; }
-.lp-checks li {
-    display: flex; align-items: flex-start; gap: 0.7rem;
-    font-size: 0.95rem; color: #333; margin-bottom: 0.7rem; line-height: 1.4;
-}
-.lp-check-icon {
-    width: 20px; height: 20px; border-radius: 50%;
-    background: #00b894; color: white;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.65rem; font-weight: 900; flex-shrink: 0; margin-top: 1px;
-}
-
-/* Score preview card */
-.score-preview-card {
-    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
-    padding: 1.8rem; box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-    max-width: 420px;
-}
-.score-card-url {
-    display: flex; align-items: center; gap: 0.6rem;
-    font-size: 0.88rem; font-weight: 600; color: #1a1a2e; margin-bottom: 0.3rem;
-}
-.score-card-sub { font-size: 0.75rem; color: #999; margin-bottom: 1.2rem; }
-.score-donut-row { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.2rem; }
-.score-donut {
-    width: 100px; height: 100px; border-radius: 50%;
-    background: conic-gradient(#00b894 0deg 306deg, #e5e7eb 306deg 360deg);
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    position: relative;
-}
-.score-donut::after {
-    content: '';
-    position: absolute; inset: 12px;
-    background: #fff; border-radius: 50%;
-}
-.score-donut-num {
-    position: absolute; z-index: 1;
-    font-size: 1.6rem; font-weight: 900; color: #1a1a2e; line-height: 1;
-}
-.score-donut-of { font-size: 0.6rem; color: #999; margin-top: 2px; }
-.score-desc { font-size: 0.82rem; color: #444; line-height: 1.5; }
-.score-bars { display: flex; flex-direction: column; gap: 0.6rem; }
-.score-bar-row { display: flex; flex-direction: column; gap: 0.3rem; }
-.score-bar-label { font-size: 0.78rem; color: #333; font-weight: 500; }
-.score-bar-track { height: 6px; background: #f0f0f0; border-radius: 50px; overflow: hidden; }
-.score-bar-fill { height: 100%; border-radius: 50px; }
-
-/* Issues card */
-.issues-preview-card {
-    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
-    overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); max-width: 420px;
-}
-.issues-card-header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 1.2rem 1.5rem; border-bottom: 1px solid #f0f0f0;
-    font-size: 0.95rem; font-weight: 700; color: #1a1a2e;
-}
-.issues-count-badge {
-    background: #f3f4f6; border-radius: 50px; padding: 3px 10px;
-    font-size: 0.78rem; color: #555; font-weight: 600;
-}
-.issue-row {
-    display: flex; align-items: flex-start; gap: 0.8rem;
-    padding: 1rem 1.5rem; border-bottom: 1px solid #f9f9f9;
-}
-.issue-row-cat {
-    font-size: 0.82rem; font-weight: 700; color: #1a1a2e;
-    min-width: 90px; padding-top: 2px;
-}
-.issue-row-items { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
-.issue-item { display: flex; align-items: flex-start; gap: 0.5rem; }
-.issue-icon-error { font-size: 0.85rem; }
-.issue-icon-warn { font-size: 0.85rem; }
-.issue-text { font-size: 0.82rem; color: #444; line-height: 1.4; }
-
-/* Competitors preview card */
-.comp-preview-card {
-    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
-    overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); max-width: 420px;
-}
-.comp-card-header {
-    padding: 1.2rem 1.5rem; border-bottom: 1px solid #f0f0f0;
-}
-.comp-card-title { font-size: 0.95rem; font-weight: 700; color: #1a1a2e; }
-.comp-card-sub { font-size: 0.78rem; color: #999; margin-top: 0.2rem; }
-.comp-table { width: 100%; border-collapse: collapse; }
-.comp-table th {
-    font-size: 0.72rem; font-weight: 600; color: #999;
-    text-align: left; padding: 0.6rem 1.5rem;
-    background: #f8fafc; border-bottom: 1px solid #f0f0f0;
-    text-transform: uppercase; letter-spacing: 0.08em;
-}
-.comp-table td {
-    font-size: 0.85rem; padding: 0.85rem 1.5rem;
-    border-bottom: 1px solid #f9f9f9; color: #333;
-}
-.comp-table td a { color: #2563eb; text-decoration: none; font-weight: 500; }
-.comp-table tr:last-child td { border-bottom: none; }
-
-/* FAQ section */
-.faq-section {
-    background: #fff; padding: 4rem; border-top: 1px solid #f0f0f0;
-    margin: 0 -2.5rem;
-}
-.faq-title {
-    font-size: 2rem; font-weight: 800; color: #1a1a2e;
-    text-align: center; margin-bottom: 2.5rem;
-}
-.faq-list { max-width: 800px; margin: 0 auto; }
-.faq-item {
-    border: 1px solid #e5e7eb; border-radius: 10px;
-    margin-bottom: 0.6rem; overflow: hidden;
-}
-.faq-item summary {
-    padding: 1.1rem 1.4rem; font-size: 0.95rem; font-weight: 600;
-    color: #1a1a2e; cursor: pointer; list-style: none;
-    display: flex; justify-content: space-between; align-items: center;
-}
-.faq-item summary::-webkit-details-marker { display: none; }
-.faq-item summary::after { content: '›'; font-size: 1.2rem; color: #999; transform: rotate(0deg); transition: transform 0.2s; }
-.faq-item[open] summary::after { transform: rotate(90deg); }
-.faq-body { padding: 0 1.4rem 1.1rem; font-size: 0.88rem; color: #555; line-height: 1.6; }
-
-/* Bottom CTA */
-.lp-bottom-cta {
-    background: #f8fafc; padding: 5rem 4rem;
-    border-top: 1px solid #f0f0f0; margin: 0 -2.5rem;
-    display: flex; gap: 4rem; align-items: center;
-}
-.lp-cta-left { flex: 1.5; }
-.lp-cta-right {
-    flex: 1; background: #fff; border: 1px solid #e5e7eb;
-    border-radius: 16px; padding: 2rem;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
-}
-.lp-cta-right-title { font-size: 1.3rem; font-weight: 800; color: #1a1a2e; margin-bottom: 0.6rem; }
-.lp-cta-right-sub { font-size: 0.88rem; color: #666; margin-bottom: 1.2rem; line-height: 1.5; }
-</style>
-
-<div class="lp-wrapper">
+    st.markdown("""<div class="lp-wrapper">
 
 <!-- Section 1: Score -->
 <div class="lp-section">
