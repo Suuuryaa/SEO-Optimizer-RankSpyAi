@@ -2027,32 +2027,6 @@ if st.session_state.mobile_mode:
 </style>
 """, unsafe_allow_html=True)
 
-# Corner buttons — fixed position HTML so they never stack on mobile
-_mob_active = st.session_state.mobile_mode
-_mob_label = "📱 Mobile View" if not _mob_active else "📱 Exit Mobile"
-_corner_btns_html = f"""
-<style>
-#corner-btns {{ position:fixed; top:12px; right:16px; z-index:10000; display:flex; gap:8px; align-items:center; }}
-#corner-btns a {{
-    background:#111; border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.7);
-    font-size:0.65rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
-    padding:6px 12px; border-radius:50px; text-decoration:none; cursor:pointer;
-    white-space:nowrap;
-}}
-#corner-btns a:hover {{ background:#1a1a1a; color:#fff; }}
-#corner-btns a.active {{ background:rgba(176,32,37,0.2); border-color:rgba(176,32,37,0.5); color:#ff6b6b; }}
-</style>
-<div id="corner-btns">
-  <a href="?mobile_toggle=1" class="{'active' if _mob_active else ''}">{_mob_label}</a>
-</div>
-"""
-st.markdown(_corner_btns_html, unsafe_allow_html=True)
-
-# Handle mobile toggle via query param
-if st.query_params.get("mobile_toggle"):
-    st.session_state.mobile_mode = not st.session_state.mobile_mode
-    st.query_params.clear()
-    st.rerun()
 
 if st.session_state.mobile_mode:
     st.markdown("""
