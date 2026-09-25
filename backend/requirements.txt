@@ -22,3 +22,4 @@ google-generativeai>=0.8.0
 # AI intelligence layer
 httpx>=0.27.0
 # force rebuild Sun Sep 27 00:00:00 IST 2026
+# HF_TOKEN set Sat Sep 26 01:44:13 IST 2026
