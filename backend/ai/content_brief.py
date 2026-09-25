@@ -13,9 +13,8 @@ Uses Gemini for the narrative brief, keyword overlap for gap analysis.
 
 import logging
 import re
+import requests
 from collections import Counter
-
-import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -135,9 +134,6 @@ def generate_content_brief(
     ai_brief = None
     if gemini_api_key and valid_comps:
         try:
-            genai.configure(api_key=gemini_api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-
             comp_summary = "\n".join([
                 f"- {c.get('Venue Name', c.get('url', '?'))}: "
                 f"{c.get('SEO Score', c.get('seo_score', 0))} score, "
@@ -166,11 +162,18 @@ Write a concise, actionable content brief (150–200 words) covering:
 
 Be specific, direct, and avoid filler language."""
 
-            resp = model.generate_content(prompt)
-            ai_brief = resp.text.strip()
+            resp = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}",
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                ai_brief = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            else:
+                ai_brief = None
         except Exception as exc:
             logger.warning(f"content_brief Gemini error: {exc}")
-            ai_brief = f"AI brief unavailable: {exc}"
+            ai_brief = None
 
     if not ai_brief:
         ai_brief = (
