@@ -1,0 +1,54 @@
+name: Daily Usage Monitor
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # 8am UTC daily
+  workflow_dispatch:
+
+jobs:
+  check-usage:
+    name: Check API balances & spend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Serper balance
+        run: |
+          BALANCE=$(curl -s https://google.serper.dev/account \
+            -H "X-API-KEY: ${{ secrets.SERPER_API_KEY }}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('balance',0))")
+          echo "Serper balance: $BALANCE credits"
+          if [ "$BALANCE" -lt 500 ]; then
+            echo "::warning::Serper balance low: $BALANCE credits remaining (threshold: 500)"
+          fi
+
+      - name: Check ScraperAPI credits
+        run: |
+          DATA=$(curl -s "https://api.scraperapi.com/account?api_key=${{ secrets.SCRAPER_API_KEY }}")
+          LEFT=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('creditsLeft',0))")
+          LIMIT=$(echo "$DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('requestLimit',0))")
+          PCT=$(python3 -c "print(round(100*$LEFT/$LIMIT,1))" 2>/dev/null || echo "?")
+          echo "ScraperAPI: $LEFT / $LIMIT credits left ($PCT%)"
+          if [ "$LEFT" -lt 200 ]; then
+            echo "::warning::ScraperAPI credits low: $LEFT remaining"
+          fi
+
+      - name: Check Railway usage
+        run: |
+          npm install -g @railway/cli 2>/dev/null || true
+          USAGE=$(railway usage --json 2>/dev/null | python3 -c "
+          import sys,json
+          try:
+              d=json.load(sys.stdin)
+              print(d.get('current_bill','unknown'))
+          except: print('unavailable')
+          " 2>/dev/null || echo "unavailable")
+          echo "Railway current bill: $$USAGE"
+
+      - name: Check Upstash Redis usage
+        run: |
+          UPSTASH_URL="${{ secrets.UPSTASH_REDIS_REST_URL }}"
+          UPSTASH_TOKEN="${{ secrets.UPSTASH_REDIS_REST_TOKEN }}"
+          POOL=$(curl -s "$UPSTASH_URL/get/global:uses" \
+            -H "Authorization: Bearer $UPSTASH_TOKEN" | python3 -c "import sys,json; print(json.load(sys.stdin).get('result',0))")
+          echo "Global pool uses today: $POOL / 100"
+          if [ "${POOL:-0}" -gt 80 ]; then
+            echo "::warning::Global usage pool at $POOL/100 — approaching daily limit"
+          fi
