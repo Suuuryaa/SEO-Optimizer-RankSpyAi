@@ -1,0 +1,22 @@
+name: Daily Pool Reset
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # midnight UTC
+  workflow_dispatch:
+
+jobs:
+  reset:
+    name: Reset global usage pool
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reset pool via admin endpoint
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+            -X POST https://affectionate-recreation-production-e508.up.railway.app/admin/reset-pool \
+            -H "x-admin-key: ${{ secrets.ADMIN_SECRET }}")
+          echo "Reset status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Pool reset returned HTTP $STATUS"
+            exit 1
+          fi

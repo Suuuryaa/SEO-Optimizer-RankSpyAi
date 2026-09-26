@@ -26,14 +26,16 @@ if _PARENT not in sys.path:
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from typing import Optional
 
-from config import active_keys, GLOBAL_LIMIT
+from config import active_keys, GLOBAL_LIMIT, ADMIN_SECRET
+from log_sanitizer import configure_logging
+configure_logging(level=os.getenv("LOG_LEVEL", "INFO"))
 from cache import (
     get_cached, set_cached,
     check_ip_rate_limit, get_ip_usage,
@@ -76,7 +78,6 @@ from ai.local_seo import analyze_local_seo
 from ai.keyphrase import extract_keyphrases
 from deep_crawl import deep_crawl
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=8)
@@ -296,6 +297,17 @@ def health():
         pool_limit=GLOBAL_LIMIT,
         remaining=get_remaining(),
     )
+
+
+@app.post("/admin/reset-pool")
+def admin_reset_pool(x_admin_key: Optional[str] = Header(None)):
+    """Reset the global usage pool. Called by daily GitHub Actions cron."""
+    if not ADMIN_SECRET or x_admin_key != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from rate_limiter import _redis_set
+    _redis_set("global:uses", "0")
+    logger.info("admin: global usage pool reset")
+    return {"reset": True, "pool_uses": 0, "pool_limit": GLOBAL_LIMIT}
 
 
 @app.get("/rate-status")

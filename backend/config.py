@@ -16,6 +16,7 @@ ZENROWS_API_KEY   = os.getenv("ZENROWS_API_KEY", "")
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+ADMIN_SECRET   = os.getenv("ADMIN_SECRET", "")
 
 # ── Upstash Redis (rate limiting) ─────────────────────────────────────────────
 UPSTASH_REDIS_REST_URL   = os.getenv("UPSTASH_REDIS_REST_URL", "")

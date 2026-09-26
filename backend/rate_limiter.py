@@ -40,6 +40,19 @@ def _redis_get(key: str) -> int:
         return 999  # Fail closed — deny when Redis is unavailable
 
 
+def _redis_set(key: str, value: str) -> None:
+    if not UPSTASH_REDIS_REST_URL or not UPSTASH_REDIS_REST_TOKEN:
+        return
+    try:
+        requests.get(
+            f"{UPSTASH_REDIS_REST_URL}/set/{key}/{value}",
+            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
+            timeout=_TIMEOUT,
+        )
+    except Exception as exc:
+        logger.warning(f"rate_limiter._redis_set({key}) failed: {exc}")
+
+
 def _redis_incr(key: str) -> int:
     if not UPSTASH_REDIS_REST_URL or not UPSTASH_REDIS_REST_TOKEN:
         return 1

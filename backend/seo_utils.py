@@ -135,7 +135,15 @@ def get_page_soup(url):
 
     tier1_blocked = False
     try:
-        resp = requests.get(url, headers=headers, timeout=20, allow_redirects=False)
+        resp = requests.get(url, headers=headers, timeout=20, allow_redirects=False, stream=True)
+        # Enforce 5 MB response size cap before reading body
+        raw = b""
+        for chunk in resp.iter_content(chunk_size=65536):
+            raw += chunk
+            if len(raw) > 5 * 1024 * 1024:
+                resp.close()
+                raise Exception("Response exceeds 5 MB size cap")
+        resp._content = raw
         # Follow redirects manually, validating each hop
         max_redirects = 5
         hops = 0
@@ -153,7 +161,14 @@ def get_page_soup(url):
                     raise Exception(f"Redirect to private IP blocked: {next_url}")
             except OSError:
                 pass
-            resp = requests.get(next_url, headers=headers, timeout=20, allow_redirects=False)
+            resp = requests.get(next_url, headers=headers, timeout=20, allow_redirects=False, stream=True)
+            raw = b""
+            for chunk in resp.iter_content(chunk_size=65536):
+                raw += chunk
+                if len(raw) > 5 * 1024 * 1024:
+                    resp.close()
+                    raise Exception("Redirect response exceeds 5 MB size cap")
+            resp._content = raw
             hops += 1
         if resp.status_code in (403, 429, 503):
             tier1_blocked = True

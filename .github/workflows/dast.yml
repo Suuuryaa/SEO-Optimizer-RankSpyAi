@@ -1,0 +1,91 @@
+name: Weekly DAST Scan
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'  # Sunday 3am UTC
+  workflow_dispatch:
+
+jobs:
+  nuclei:
+    name: Nuclei Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install Nuclei
+        run: |
+          go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+          nuclei -update-templates -silent
+
+      - name: Scan frontend (headers, SSL, misconfig)
+        run: |
+          nuclei \
+            -target https://rankspyseo.xyz \
+            -tags headers,ssl,misconfiguration,exposure \
+            -severity medium,high,critical \
+            -rate-limit 5 \
+            -json-export nuclei-frontend.json \
+            -silent || true
+
+      - name: Scan backend API (misconfig, exposure)
+        run: |
+          nuclei \
+            -target https://affectionate-recreation-production-e508.up.railway.app \
+            -tags misconfiguration,exposure,cve \
+            -severity medium,high,critical \
+            -rate-limit 5 \
+            -json-export nuclei-backend.json \
+            -silent || true
+
+      - name: Check for critical findings
+        run: |
+          python3 << 'EOF'
+          import json, sys, os
+
+          findings = []
+          for fname in ["nuclei-frontend.json", "nuclei-backend.json"]:
+              if not os.path.exists(fname):
+                  continue
+              for line in open(fname):
+                  line = line.strip()
+                  if line:
+                      try:
+                          findings.append(json.loads(line))
+                      except Exception:
+                          pass
+
+          if not findings:
+              print("No findings.")
+              sys.exit(0)
+
+          by_severity = {}
+          for f in findings:
+              sev = f.get("info", {}).get("severity", "unknown")
+              by_severity.setdefault(sev, []).append(f["info"]["name"])
+
+          for sev, names in by_severity.items():
+              print(f"{sev.upper()}: {len(names)}")
+              for n in names:
+                  print(f"  - {n}")
+
+          criticals = by_severity.get("critical", [])
+          if criticals:
+              print(f"\nFAIL: {len(criticals)} critical finding(s)")
+              sys.exit(1)
+
+          print("\nPASS: No critical findings.")
+          EOF
+
+      - name: Upload DAST reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-nuclei-${{ github.run_number }}
+          path: nuclei-*.json
+          if-no-files-found: ignore

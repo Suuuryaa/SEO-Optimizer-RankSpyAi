@@ -20,9 +20,20 @@ from config import UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT   = 5
-_RESULT_TTL = 86400   # 24 h
-_RATE_TTL   = 90000   # 25 h  (slight padding so midnight resets cleanly)
+_TIMEOUT    = 5
+_RESULT_TTL = 86400  # 24 h
+
+# Per-endpoint TTLs — use these when caching specific API call results
+CACHE_TTL = {
+    "analyze":        86400,  # 24h — page content changes slowly
+    "competitors":     3600,  # 1h  — SERP shifts hourly
+    "pagespeed":       3600,  # 1h
+    "gemini_summary": 86400,  # 24h — same URL+keyword = same AI output
+    "serper_search":   1800,  # 30m — search results
+    "leaderboard":     3600,  # 1h
+}
+
+_RATE_TTL   = 90000  # 25 h  (slight padding so midnight resets cleanly)
 
 DAILY_FREE_LIMIT = 10  # demo mode — global pool of 10 is the real cap
 
