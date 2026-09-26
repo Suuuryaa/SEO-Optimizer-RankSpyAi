@@ -135,7 +135,26 @@ def get_page_soup(url):
 
     tier1_blocked = False
     try:
-        resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
+        resp = requests.get(url, headers=headers, timeout=20, allow_redirects=False)
+        # Follow redirects manually, validating each hop
+        max_redirects = 5
+        hops = 0
+        while resp.is_redirect and hops < max_redirects:
+            location = resp.headers.get("Location", "")
+            from urllib.parse import urljoin as _urljoin
+            next_url = _urljoin(url, location)
+            from urllib.parse import urlparse as _up2
+            import ipaddress as _ipa2, socket as _sock2
+            _host = _up2(next_url).hostname or ""
+            try:
+                _resolved = _sock2.gethostbyname(_host)
+                _addr = _ipa2.ip_address(_resolved)
+                if _addr.is_private or _addr.is_loopback or _addr.is_link_local:
+                    raise Exception(f"Redirect to private IP blocked: {next_url}")
+            except OSError:
+                pass
+            resp = requests.get(next_url, headers=headers, timeout=20, allow_redirects=False)
+            hops += 1
         if resp.status_code in (403, 429, 503):
             tier1_blocked = True
             logger.info(f"Tier1 got {resp.status_code} from {url} — escalating to Fetcher")

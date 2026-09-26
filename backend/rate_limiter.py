@@ -36,8 +36,8 @@ def _redis_get(key: str) -> int:
         val = resp.json().get("result")
         return int(val) if val else 0
     except Exception as exc:
-        logger.warning(f"rate_limiter._redis_get({key}) failed: {exc}")
-        return 0
+        logger.error(f"rate_limiter._redis_get({key}) failed: {exc}")
+        return 999  # Fail closed — deny when Redis is unavailable
 
 
 def _redis_incr(key: str) -> int:

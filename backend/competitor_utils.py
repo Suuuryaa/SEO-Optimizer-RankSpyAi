@@ -340,11 +340,16 @@ OUTPUT RULES:
     }
 
     # Discover available models for this API key — also validates the key early
+    _gemini_headers = {
+        "x-goog-api-key": gemini_api_key,
+        "Content-Type": "application/json",
+    }
     available_models = []
     for api_ver in ["v1beta", "v1"]:
         try:
             list_resp = _req.get(
-                f"https://generativelanguage.googleapis.com/{api_ver}/models?key={gemini_api_key}",
+                f"https://generativelanguage.googleapis.com/{api_ver}/models",
+                headers=_gemini_headers,
                 timeout=15
             )
             if list_resp.status_code == 401:
@@ -394,10 +399,10 @@ OUTPUT RULES:
         for api_ver in ["v1beta", "v1"]:
             endpoint = (
                 f"https://generativelanguage.googleapis.com/{api_ver}"
-                f"/models/{model}:generateContent?key={gemini_api_key}"
+                f"/models/{model}:generateContent"
             )
             try:
-                resp = _req.post(endpoint, json=payload, timeout=30)
+                resp = _req.post(endpoint, headers=_gemini_headers, json=payload, timeout=30)
 
                 if resp.status_code == 429:
                     # Don't give up — record the error and try the next model

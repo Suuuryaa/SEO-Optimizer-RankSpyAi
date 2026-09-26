@@ -115,7 +115,7 @@ app.add_middleware(MaxBodySizeMiddleware)
 
 _ALLOWED_ORIGINS = os.environ.get(
     "ALLOWED_ORIGINS",
-    "https://rankspyseo.xyz,https://www.rankspyseo.xyz,http://localhost:5173,http://localhost:3000"
+    "https://rankspyseo.xyz,https://www.rankspyseo.xyz"
 ).split(",")
 
 app.add_middleware(
@@ -143,25 +143,41 @@ async def warmup_hf():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# Cloudflare IPv4 ranges (update periodically via https://www.cloudflare.com/ips/)
+_CF_RANGES = [
+    "173.245.48.0/20","103.21.244.0/22","103.22.200.0/22","103.31.4.0/22",
+    "141.101.64.0/18","108.162.192.0/18","190.93.240.0/20","188.114.96.0/20",
+    "197.234.240.0/22","198.41.128.0/17","162.158.0.0/15","104.16.0.0/13",
+    "104.24.0.0/14","172.64.0.0/13","131.0.72.0/22",
+]
+import ipaddress as _ipaddr
+_CF_NETS = [_ipaddr.ip_network(r) for r in _CF_RANGES]
+
+def _is_cloudflare_ip(ip: str) -> bool:
+    try:
+        addr = _ipaddr.ip_address(ip)
+        return any(addr in net for net in _CF_NETS)
+    except ValueError:
+        return False
+
 def _client_ip(request: Request) -> str:
-    """Get real client IP — Cloudflare sets CF-Connecting-IP."""
-    return (
-        request.headers.get("CF-Connecting-IP")
-        or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-        or request.client.host
-        or "unknown"
-    )
+    """Get real client IP. Only trust CF-Connecting-IP when request genuinely came from Cloudflare."""
+    real_ip = (request.client.host or "unknown") if request.client else "unknown"
+    if _is_cloudflare_ip(real_ip):
+        return request.headers.get("CF-Connecting-IP") or real_ip
+    return real_ip
 
 
 def _has_own_keys(user_api_keys) -> bool:
-    """Only bypass pool if keys look like real API keys (min 20 chars, no whitespace)."""
+    """Only bypass pool if keys match known API key formats."""
     if not user_api_keys:
         return False
+    import re as _re
     sk = user_api_keys.serper_key or ""
     gk = user_api_keys.gemini_key or ""
-    import re as _re
-    _real = lambda k: len(k) >= 20 and not _re.search(r'\s', k)
-    return _real(sk) and _real(gk)
+    serper_valid = bool(_re.match(r'^[a-f0-9]{40}$', sk))
+    gemini_valid = bool(_re.match(r'^AIzaSy[A-Za-z0-9_-]{33}$', gk))
+    return serper_valid and gemini_valid
 
 
 def _gate(user_api_keys) -> dict:
@@ -313,7 +329,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
         result = await _run(_full_seo_analysis, req.url, req.keyword, keys)
     except Exception as exc:
         logger.error(f"/analyze error for {req.url}: {exc}")
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail="Analysis failed. Please try again.")
 
     # ── Deep Playwright crawl (JS mode) ───────────────────────────────────────
     if js_mode:
@@ -333,7 +349,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
                     result["word_count"] = max(result.get("word_count", 0), _cw(combined))
         except Exception as exc:
             logger.warning(f"/analyze deep crawl error: {exc}")
-            result["deep_crawl"] = {"error": str(exc)}
+            result["deep_crawl"] = {"error": "Deep crawl failed"}
 
     soup = result.pop("_soup")
     text = result.pop("_text")
@@ -363,7 +379,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
                                    "llmstxt": llmstxt_data, "eeat": eeat_data}
         except Exception as exc:
             logger.warning(f"/analyze GEO error: {exc}")
-            result["geo_score"] = {"error": str(exc)}
+            result["geo_score"] = {"error": "GEO analysis failed"}
 
     # ── PageSpeed ─────────────────────────────────────────────────────────────
     if req.pagespeed:
@@ -376,7 +392,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
                 )
             except Exception as exc:
                 logger.warning(f"/analyze PageSpeed error: {exc}")
-                result["pagespeed"] = {"error": str(exc)}
+                result["pagespeed"] = {"error": "PageSpeed analysis failed"}
 
     # ── Await semantic score ──────────────────────────────────────────────────
     try:
@@ -408,7 +424,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
         primary_raw = await _run(_full_seo_analysis, req.url, req.keyword, keys)
     except Exception as exc:
         logger.error(f"/competitors primary error: {exc}")
-        raise HTTPException(status_code=502, detail=f"Primary analysis failed: {exc}")
+        raise HTTPException(status_code=502, detail="Analysis failed. Please try again.")
 
     primary_raw.pop("_soup", None)
     primary_text = primary_raw.pop("_text", "")
@@ -422,7 +438,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
         )
     except Exception as exc:
         logger.error(f"/competitors discovery error: {exc}")
-        raise HTTPException(status_code=502, detail=f"Discovery failed: {exc}")
+        raise HTTPException(status_code=502, detail="Competitor discovery failed. Please try again.")
 
     # Analyse competitors in parallel
     async def _analyze_comp(comp):
@@ -500,7 +516,7 @@ async def suggest_meta(req: SuggestMetaRequest, request: Request):
     try:
         result = await _run(_full_seo_analysis, req.url, req.keyword, {})
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail="Analysis failed. Please try again.")
 
     soup = result.pop("_soup")
     text = result.pop("_text")
@@ -516,7 +532,7 @@ async def suggest_meta(req: SuggestMetaRequest, request: Request):
             req.url,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Meta suggestion generation failed.")
 
     return {
         "url":              req.url,
@@ -535,7 +551,7 @@ async def schema_endpoint(req: SchemaRequest, request: Request):
     try:
         result = await _run(_full_seo_analysis, req.url, req.keyword, {})
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail="Analysis failed. Please try again.")
 
     soup = result.pop("_soup")
     text = result.pop("_text")
@@ -552,7 +568,7 @@ async def schema_endpoint(req: SchemaRequest, request: Request):
             result["word_count"],
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Schema generation failed.")
 
     return {"url": req.url, **schema_data}
 
@@ -563,7 +579,7 @@ async def local_seo_endpoint(req: SuggestMetaRequest, request: Request):
     try:
         result = await _run(_full_seo_analysis, req.url, req.keyword, {})
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail="Analysis failed. Please try again.")
 
     soup = result.pop("_soup")
     text = result.pop("_text")
@@ -571,7 +587,7 @@ async def local_seo_endpoint(req: SuggestMetaRequest, request: Request):
     try:
         local_data = await _run(analyze_local_seo, req.url, soup, text)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Local SEO analysis failed.")
 
     return {"url": req.url, "keyword": req.keyword, **local_data}
 
@@ -586,7 +602,7 @@ async def compare(req: CompareRequest, request: Request):
             _run(analyze_venue, req.url2, req.keyword),
         )
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail="Comparison failed. Please try again.")
 
     comparison = {
         "SEO Score":          compare_metric(r1["SEO Score"], r2["SEO Score"]),
@@ -632,7 +648,7 @@ async def pagespeed(req: PageSpeedRequest, request: Request):
     try:
         data = await _run(get_pagespeed_data, req.url, keys["pagespeed"], req.strategy)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail="PageSpeed analysis failed. Please try again.")
     return PageSpeedResponse(url=req.url, strategy=req.strategy, data=data,
                              pool_uses=gate["uses"], pool_remaining=gate["remaining"])
 
@@ -655,7 +671,7 @@ async def track_keyword(req: TrackRequest, request: Request):
         row = await _run(save_tracking, req.url, req.keyword, supabase_url, supabase_key)
     except Exception as exc:
         logger.error(f"/track save_tracking error: {exc}")
-        raise HTTPException(status_code=502, detail=f"Failed to save tracking: {exc}")
+        raise HTTPException(status_code=502, detail="Failed to save tracking. Please try again.")
 
     rank_result = None
     if serper_key:
@@ -667,7 +683,7 @@ async def track_keyword(req: TrackRequest, request: Request):
             )
         except Exception as exc:
             logger.warning(f"/track check_rank error: {exc}")
-            rank_result = {"error": str(exc)}
+            rank_result = {"error": "Rank check failed"}
 
     return {"tracking": row, "rank": rank_result}
 
@@ -684,7 +700,7 @@ async def get_rankings(url: str, request: Request):
         history = await _run(get_tracking_history, url, supabase_url, supabase_key)
     except Exception as exc:
         logger.error(f"/rankings error: {exc}")
-        raise HTTPException(status_code=502, detail=f"Failed to fetch rankings: {exc}")
+        raise HTTPException(status_code=502, detail="Failed to fetch rankings. Please try again.")
 
     return {"url": url, "tracked": history}
 
@@ -694,21 +710,37 @@ class ContactRequest(BaseModel):
     email:   str = Field(min_length=5, max_length=200)
     message: str = Field(min_length=1, max_length=3000)
 
-# Simple in-process per-IP rate limiter for /contact (no Redis dep needed)
-_contact_ips: dict = {}
-
 def _contact_rate_ok(ip: str) -> bool:
-    """Allow max 3 submissions per IP per 10 minutes."""
+    """Allow max 3 contact submissions per IP per 10 minutes, backed by Redis."""
     import time
-    now = time.time()
-    window = 600  # 10 min
-    calls = _contact_ips.get(ip, [])
-    calls = [t for t in calls if now - t < window]
-    if len(calls) >= 3:
-        return False
-    calls.append(now)
-    _contact_ips[ip] = calls
-    return True
+    from config import UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
+    import requests as _req
+
+    window = 600  # 10 minutes
+    key = f"contact_rate:{ip}"
+
+    if not UPSTASH_REDIS_REST_URL or not UPSTASH_REDIS_REST_TOKEN:
+        # No Redis — fall back to allow (don't block legitimate users)
+        return True
+
+    headers = {"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
+    try:
+        # Increment and set TTL atomically
+        resp = _req.get(
+            f"{UPSTASH_REDIS_REST_URL}/incr/{key}",
+            headers=headers, timeout=5,
+        )
+        count = int(resp.json().get("result", 1))
+        if count == 1:
+            # First hit — set expiry
+            _req.get(
+                f"{UPSTASH_REDIS_REST_URL}/expire/{key}/{window}",
+                headers=headers, timeout=5,
+            )
+        return count <= 3
+    except Exception as exc:
+        logger.warning(f"_contact_rate_ok Redis error: {exc}")
+        return True  # Fail open for contact (non-critical path)
 
 
 @app.post("/contact")
@@ -735,17 +767,20 @@ async def contact_form(req: ContactRequest, request: Request):
         logger.warning(f"Contact form submission from {req.email} (email not configured)")
         return {"ok": True}
 
+    _safe_name = req.name.replace('\r', '').replace('\n', '')
+    _safe_email = req.email.replace('\r', '').replace('\n', '')
+    _safe_msg = req.message.replace('\r\n', '\n').replace('\r', '\n')
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"RankSpy Contact: {req.name}"
+    msg["Subject"] = f"RankSpy Contact: {_safe_name}"
     msg["From"] = gmail_user
     msg["To"] = recipient
     body = f"""New contact form submission from RankSpy AI:
 
-Name: {req.name}
-Email: {req.email}
+Name: {_safe_name}
+Email: {_safe_email}
 
 Message:
-{req.message}""".strip()
+{_safe_msg}""".strip()
     msg.attach(MIMEText(body, "plain"))
     raw = msg.as_string()
 
@@ -758,7 +793,7 @@ Message:
                     "https://api.resend.com/emails",
                     headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
                     json={"from": "RankSpy AI <contact@rankspyseo.xyz>", "to": [recipient],
-                          "subject": f"RankSpy Contact: {req.name}",
+                          "subject": f"RankSpy Contact: {_safe_name}",
                           "text": body},
                     timeout=15,
                 )

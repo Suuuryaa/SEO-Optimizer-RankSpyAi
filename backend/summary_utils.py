@@ -1,4 +1,17 @@
 import requests as _req
+import re as _re_prompt
+
+
+def _sanitize_for_prompt(text: str, max_len: int = 300) -> str:
+    """Remove prompt injection patterns from scraped content before sending to LLM."""
+    if not text:
+        return ""
+    text = _re_prompt.sub(r'(?i)ignore\s+(all\s+)?(previous|prior|above)\s+instructions?', '[removed]', text)
+    text = _re_prompt.sub(r'(?i)system\s*prompt', '[removed]', text)
+    text = _re_prompt.sub(r'(?i)(return|output|reveal|print)\s+(your\s+)?(api\s*key|secret|token|password)', '[removed]', text)
+    text = _re_prompt.sub(r'(?i)you\s+are\s+now', '[removed]', text)
+    text = _re_prompt.sub(r'(?i)act\s+as\s+(a\s+)?(different|new|another)', '[removed]', text)
+    return text[:max_len]
 
 
 def get_executive_summary(score, keyword_count, missing_alt_count, word_count):
@@ -64,7 +77,7 @@ def generate_ai_executive_summary(
     comp_lines = []
     for r in comp_rows[:10]:
         comp_lines.append(
-            f"  - {r.get('Venue Name','?')}: SEO Score {r.get('SEO Score',0)}, "
+            f"  - {_sanitize_for_prompt(r.get('Venue Name','?'))}: SEO Score {r.get('SEO Score',0)}, "
             f"Word Count {r.get('Word Count',0)}, Keyword Count {r.get('Keyword Count',0)}, "
             f"HTTPS {r.get('HTTPS','?')}, Schema {r.get('Schema','?')}"
         )
@@ -81,14 +94,14 @@ def generate_ai_executive_summary(
         f"Images Missing ALT: {primary_data.get('Images Missing ALT', 0)}"
     )
 
-    insights_text = "\n".join([f"  - {i}" for i in strategic_insights[:8]]) or "  None provided."
+    insights_text = "\n".join([f"  - {_sanitize_for_prompt(i)}" for i in strategic_insights[:8]]) or "  None provided."
 
     prompt = f"""You are a senior SEO strategist writing a detailed analysis report for a business owner.
 
-PRIMARY SITE: {primary_name}
-TARGET KEYWORD: "{keyword}"
+PRIMARY SITE: {_sanitize_for_prompt(primary_name)}
+TARGET KEYWORD: "{_sanitize_for_prompt(keyword)}"
 PRIMARY SEO DATA: {primary_detail}
-BEST COMPETITOR: {top_competitor}
+BEST COMPETITOR: {_sanitize_for_prompt(top_competitor)}
 
 COMPETITOR DATA:
 {comp_text}
@@ -130,12 +143,17 @@ Be specific, use the actual data provided, and write for a non-technical busines
             "generationConfig": {"temperature": 0.4, "maxOutputTokens": 8192}
         }
 
+        _gemini_headers = {
+            "x-goog-api-key": gemini_api_key,
+            "Content-Type": "application/json",
+        }
         models_to_try = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash",
                          "gemini-1.5-flash-8b", "gemini-1.5-pro", "gemini-1.0-pro"]
         for api_ver in ["v1beta", "v1"]:
             try:
                 r = _req.get(
-                    f"https://generativelanguage.googleapis.com/{api_ver}/models?key={gemini_api_key}",
+                    f"https://generativelanguage.googleapis.com/{api_ver}/models",
+                    headers=_gemini_headers,
                     timeout=10
                 )
                 if r.status_code == 200:
@@ -154,8 +172,8 @@ Be specific, use the actual data provided, and write for a non-technical busines
         for model in models_to_try[:4]:
             for api_ver in ["v1beta", "v1"]:
                 ep = (f"https://generativelanguage.googleapis.com/{api_ver}"
-                      f"/models/{model}:generateContent?key={gemini_api_key}")
-                resp = _req.post(ep, json=payload, timeout=60)
+                      f"/models/{model}:generateContent")
+                resp = _req.post(ep, headers=_gemini_headers, json=payload, timeout=60)
                 if resp.status_code == 200:
                     return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 

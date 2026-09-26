@@ -7,6 +7,56 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
+import ipaddress as _ipaddress
+import re as _re_mod
+import socket as _socket
+from urllib.parse import urlparse as _urlparse_shared
+
+# Blocked cloud metadata and internal hostnames
+_BLOCKED_HOSTS = frozenset({
+    "169.254.169.254", "metadata.google.internal", "metadata.internal",
+    "localhost", "0.0.0.0",
+})
+
+def _is_private_ip(host: str) -> bool:
+    try:
+        addr = _ipaddress.ip_address(host)
+        return (addr.is_private or addr.is_loopback or
+                addr.is_link_local or addr.is_reserved or addr.is_unspecified)
+    except ValueError:
+        return False
+
+def _validate_url(v: str) -> str:
+    """Shared hardened URL validator used by all request models."""
+    # Strip control characters
+    v = _re_mod.sub(r'[\x00-\x1f\x7f]', '', v).strip()
+    if not v.startswith(("http://", "https://")):
+        if _re_mod.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*:', v):
+            raise ValueError("URL scheme must be http or https")
+        v = "https://" + v
+    parsed = _urlparse_shared(v)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("URL scheme must be http or https")
+    if not parsed.netloc or "." not in parsed.netloc:
+        raise ValueError("Invalid domain in URL")
+    if _re_mod.search(r'[\x00-\x1f]', parsed.netloc + parsed.path):
+        raise ValueError("URL contains invalid characters")
+    host = parsed.hostname or ""
+    # Block raw private IPs
+    if _is_private_ip(host):
+        raise ValueError("Private/internal IP addresses are not allowed")
+    # Block known metadata endpoints by hostname
+    if host.lower() in _BLOCKED_HOSTS:
+        raise ValueError("Blocked host")
+    # DNS pre-resolution to catch SSRF via public-looking hostnames
+    try:
+        resolved = _socket.gethostbyname(host)
+        if _is_private_ip(resolved):
+            raise ValueError("URL resolves to a private IP address")
+    except OSError:
+        pass  # DNS failure — let downstream handle it
+    return v
+
 
 # ── Shared sub-models ─────────────────────────────────────────────────────────
 
@@ -114,25 +164,7 @@ class AnalyzeRequest(BaseModel):
     @field_validator("url")
     @classmethod
     def ensure_scheme(cls, v: str) -> str:
-        from pydantic import ValidationError as _VE
-        from urllib.parse import urlparse as _up
-        import re as _re
-        # Strip control characters (newlines, carriage returns, null bytes)
-        v = _re.sub(r'[\x00-\x1f\x7f]', '', v).strip()
-        if not v.startswith(("http://", "https://")):
-            # Reject any explicit non-http scheme before prepending
-            if _re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*:', v):
-                raise ValueError("URL scheme must be http or https")
-            v = "https://" + v
-        parsed = _up(v)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError("URL scheme must be http or https")
-        if not parsed.netloc or "." not in parsed.netloc:
-            raise ValueError("Invalid domain in URL")
-        # Reject URLs that still contain suspicious control chars after parse
-        if _re.search(r'[\x00-\x1f]', parsed.netloc + parsed.path):
-            raise ValueError("URL contains invalid characters")
-        return v
+        return _validate_url(v)
 
 
 class AnalyzeResponse(BaseModel):
@@ -174,24 +206,7 @@ class CompetitorsRequest(BaseModel):
     @field_validator("url")
     @classmethod
     def ensure_scheme(cls, v: str) -> str:
-        from urllib.parse import urlparse as _up
-        import re as _re
-        # Strip control characters (newlines, carriage returns, null bytes)
-        v = _re.sub(r'[\x00-\x1f\x7f]', '', v).strip()
-        if not v.startswith(("http://", "https://")):
-            # Reject any explicit non-http scheme before prepending
-            if _re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*:', v):
-                raise ValueError("URL scheme must be http or https")
-            v = "https://" + v
-        parsed = _up(v)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError("URL scheme must be http or https")
-        if not parsed.netloc or "." not in parsed.netloc:
-            raise ValueError("Invalid domain in URL")
-        # Reject URLs that still contain suspicious control chars after parse
-        if _re.search(r'[\x00-\x1f]', parsed.netloc + parsed.path):
-            raise ValueError("URL contains invalid characters")
-        return v
+        return _validate_url(v)
 
 
 class CompetitorResult(BaseModel):
@@ -231,24 +246,7 @@ class CompareRequest(BaseModel):
     @field_validator("url1", "url2")
     @classmethod
     def ensure_scheme(cls, v: str) -> str:
-        from urllib.parse import urlparse as _up
-        import re as _re
-        # Strip control characters (newlines, carriage returns, null bytes)
-        v = _re.sub(r'[\x00-\x1f\x7f]', '', v).strip()
-        if not v.startswith(("http://", "https://")):
-            # Reject any explicit non-http scheme before prepending
-            if _re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*:', v):
-                raise ValueError("URL scheme must be http or https")
-            v = "https://" + v
-        parsed = _up(v)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError("URL scheme must be http or https")
-        if not parsed.netloc or "." not in parsed.netloc:
-            raise ValueError("Invalid domain in URL")
-        # Reject URLs that still contain suspicious control chars after parse
-        if _re.search(r'[\x00-\x1f]', parsed.netloc + parsed.path):
-            raise ValueError("URL contains invalid characters")
-        return v
+        return _validate_url(v)
 
 
 class CompareResponse(BaseModel):
@@ -269,12 +267,9 @@ class LeaderboardRequest(BaseModel):
     @field_validator("urls")
     @classmethod
     def ensure_schemes(cls, urls: List[str]) -> List[str]:
-        result = []
-        for u in urls:
-            if not u.startswith(("http://", "https://")):
-                u = "https://" + u
-            result.append(u)
-        return result
+        if len(urls) > 10:
+            raise ValueError("Maximum 10 URLs allowed")
+        return [_validate_url(u) for u in urls]
 
 
 class LeaderboardResponse(BaseModel):
@@ -293,24 +288,7 @@ class PageSpeedRequest(BaseModel):
     @field_validator("url")
     @classmethod
     def ensure_scheme(cls, v: str) -> str:
-        from urllib.parse import urlparse as _up
-        import re as _re
-        # Strip control characters (newlines, carriage returns, null bytes)
-        v = _re.sub(r'[\x00-\x1f\x7f]', '', v).strip()
-        if not v.startswith(("http://", "https://")):
-            # Reject any explicit non-http scheme before prepending
-            if _re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*:', v):
-                raise ValueError("URL scheme must be http or https")
-            v = "https://" + v
-        parsed = _up(v)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError("URL scheme must be http or https")
-        if not parsed.netloc or "." not in parsed.netloc:
-            raise ValueError("Invalid domain in URL")
-        # Reject URLs that still contain suspicious control chars after parse
-        if _re.search(r'[\x00-\x1f]', parsed.netloc + parsed.path):
-            raise ValueError("URL contains invalid characters")
-        return v
+        return _validate_url(v)
 
 
 class PageSpeedResponse(BaseModel):

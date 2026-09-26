@@ -122,6 +122,30 @@ async def deep_crawl(url: str, max_pages: int = _MAX_PAGES) -> dict:
             visited.add(current_url)
 
             page = await context.new_page()
+            # Block navigation to internal/private IPs and dangerous schemes
+            async def _block_ssrf(route):
+                req_url = route.request.url
+                try:
+                    from urllib.parse import urlparse as _up3
+                    import ipaddress as _ipa3, socket as _sock3
+                    _parsed3 = _up3(req_url)
+                    if _parsed3.scheme not in ("http", "https"):
+                        await route.abort()
+                        return
+                    _h3 = _parsed3.hostname or ""
+                    try:
+                        _r3 = _sock3.gethostbyname(_h3)
+                        _a3 = _ipa3.ip_address(_r3)
+                        if _a3.is_private or _a3.is_loopback or _a3.is_link_local:
+                            await route.abort()
+                            return
+                    except OSError:
+                        pass
+                except Exception:
+                    await route.abort()
+                    return
+                await route.continue_()
+            await page.route("**/*", _block_ssrf)
             try:
                 await page.goto(current_url, timeout=_PAGE_TIMEOUT, wait_until="domcontentloaded")
                 await page.wait_for_timeout(800)  # let JS settle

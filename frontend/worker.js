@@ -3,6 +3,7 @@ export default {
     const response = await env.ASSETS.fetch(request);
     const newHeaders = new Headers(response.headers);
 
+    newHeaders.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
     newHeaders.set('X-Content-Type-Options', 'nosniff');
     newHeaders.set('X-Frame-Options', 'DENY');
     newHeaders.set('Referrer-Policy', 'strict-origin-when-cross-origin');
