@@ -8,3 +8,9 @@ render.env
 *.env
 .streamlit/secrets.toml
 pentest.js
+node_modules/
+qa/node_modules/
+frontend/node_modules/
+crawlee-master/
+backend/rank_tracker.db
+app.py.backup
