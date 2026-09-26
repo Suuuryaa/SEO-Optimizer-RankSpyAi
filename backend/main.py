@@ -29,7 +29,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 from typing import Optional
 
 from config import active_keys, GLOBAL_LIMIT
@@ -71,21 +72,73 @@ from ai.semantic import semantic_keyword_score
 from ai.meta_gen import generate_meta_suggestions
 from ai.schema_gen import generate_schema
 from ai.content_brief import generate_content_brief
+from ai.local_seo import analyze_local_seo
+from ai.keyphrase import extract_keyphrases
+from deep_crawl import deep_crawl
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=8)
 
-app = FastAPI(title="RankSpy AI API", version="2.0.0")
+_is_prod = os.environ.get("ENV", "development").lower() == "production"
+app = FastAPI(
+    title="RankSpy AI API",
+    version="2.0.0",
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
+)
+
+# ── Security headers middleware ───────────────────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"]  = "nosniff"
+        response.headers["X-Frame-Options"]          = "DENY"
+        response.headers["Referrer-Policy"]          = "strict-origin-when-cross-origin"
+        response.headers["X-XSS-Protection"]         = "1; mode=block"
+        return response
+
+# ── Body size limit (1 MB) ────────────────────────────────────────────────────
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    _LIMIT = 1_000_000  # 1 MB
+
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl and int(cl) > self._LIMIT:
+            return JSONResponse(status_code=413, content={"detail": "Payload too large"})
+        return await call_next(request)
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(MaxBodySizeMiddleware)
+
+_ALLOWED_ORIGINS = os.environ.get(
+    "ALLOWED_ORIGINS",
+    "https://rankspyseo.xyz,https://www.rankspyseo.xyz,http://localhost:5173,http://localhost:3000"
+).split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+
+
+@app.on_event("startup")
+async def warmup_hf():
+    """Pre-warm HuggingFace models in background — avoids cold-start delay."""
+    import threading
+    def _warm():
+        try:
+            from ai.semantic import _embed
+            _embed(["warmup"])
+            logger.info("HuggingFace MiniLM warmed up")
+        except Exception as e:
+            logger.warning(f"HF warmup failed: {e}")
+    threading.Thread(target=_warm, daemon=True).start()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -101,9 +154,14 @@ def _client_ip(request: Request) -> str:
 
 
 def _has_own_keys(user_api_keys) -> bool:
+    """Only bypass pool if keys look like real API keys (min 20 chars, no whitespace)."""
     if not user_api_keys:
         return False
-    return bool(user_api_keys.serper_key and user_api_keys.gemini_key)
+    sk = user_api_keys.serper_key or ""
+    gk = user_api_keys.gemini_key or ""
+    import re as _re
+    _real = lambda k: len(k) >= 20 and not _re.search(r'\s', k)
+    return _real(sk) and _real(gk)
 
 
 def _gate(user_api_keys) -> dict:
@@ -117,6 +175,15 @@ async def _run(fn, *args):
     """Run a blocking function in the thread pool."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(_executor, fn, *args)
+
+
+def _sanitize_input(v: str, max_len: int = 200) -> str:
+    """Strip HTML tags and control chars from any user-supplied string before echoing."""
+    from html import escape as _escape
+    import re as _re
+    v = _re.sub(r'[\x00-\x1f\x7f]', '', v)   # control chars
+    v = _re.sub(r'<[^>]+>', '', v)             # strip HTML tags
+    return _escape(v.strip())[:max_len]
 
 
 def _full_seo_analysis(url: str, keyword: str, keys: dict) -> dict:
@@ -154,7 +221,7 @@ def _full_seo_analysis(url: str, keyword: str, keys: dict) -> dict:
     summary_raw = get_executive_summary(score, kc, len(missing), wc)
 
     return {
-        "url": url, "keyword": keyword,
+        "url": url, "keyword": _sanitize_input(keyword),
         "title": title, "meta_description": meta,
         "h1_tags": h1, "word_count": wc, "keyword_count": kc,
         "keyword_density": kd, "internal_links": len(internal),
@@ -217,37 +284,28 @@ def health():
 
 @app.get("/rate-status")
 def rate_status(request: Request):
-    """Return the caller's per-IP daily usage for the frontend counter."""
-    ip = _client_ip(request)
-    usage = get_ip_usage(ip)
+    """Return global pool usage — never resets until manually cleared."""
+    used = get_global_uses()
+    remaining = max(0, GLOBAL_LIMIT - used)
     return {
-        "ip_used":      usage["used"],
-        "ip_remaining": usage["remaining"],
-        "daily_limit":  DAILY_FREE_LIMIT,
+        "ip_used":      used,
+        "ip_remaining": remaining,
+        "daily_limit":  GLOBAL_LIMIT,
     }
 
 
 @app.post("/analyze")
 async def analyze(req: AnalyzeRequest, request: Request):
-    ip   = _client_ip(request)
-    rate = check_ip_rate_limit(ip)
-
-    if not rate["allowed"]:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Daily limit of {DAILY_FREE_LIMIT} checks reached. Come back tomorrow!"
-        )
-
     gate = _gate(req.user_api_keys)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     # ── Check result cache first ──────────────────────────────────────────────
+    js_mode = req.crawl_mode == "javascript"
     cached = get_cached(req.url, req.keyword)
-    if cached and not req.geo and not req.pagespeed:
+    if cached and not req.geo and not req.pagespeed and not js_mode:
         logger.info(f"/analyze cache HIT: {req.url}")
         cached["pool_uses"]      = gate["uses"]
         cached["pool_remaining"] = gate["remaining"]
-        cached["ip_remaining"]   = rate["remaining"]
         return cached
 
     # ── Run analysis pipeline ─────────────────────────────────────────────────
@@ -256,6 +314,26 @@ async def analyze(req: AnalyzeRequest, request: Request):
     except Exception as exc:
         logger.error(f"/analyze error for {req.url}: {exc}")
         raise HTTPException(status_code=502, detail=str(exc))
+
+    # ── Deep Playwright crawl (JS mode) ───────────────────────────────────────
+    if js_mode:
+        try:
+            logger.info(f"/analyze deep crawl: {req.url}")
+            crawl_data = await deep_crawl(req.url)
+            if "error" not in crawl_data:
+                # Enrich with HF keyphrases across all discovered content
+                combined = crawl_data.get("combined_text", "")
+                if combined:
+                    kp = await _run(extract_keyphrases, combined)
+                    crawl_data["keyphrases"] = kp
+                result["deep_crawl"] = crawl_data
+                # Boost word count with JS-rendered text
+                if combined:
+                    from seo_utils import count_words as _cw
+                    result["word_count"] = max(result.get("word_count", 0), _cw(combined))
+        except Exception as exc:
+            logger.warning(f"/analyze deep crawl error: {exc}")
+            result["deep_crawl"] = {"error": str(exc)}
 
     soup = result.pop("_soup")
     text = result.pop("_text")
@@ -309,10 +387,9 @@ async def analyze(req: AnalyzeRequest, request: Request):
 
     result["pool_uses"]      = gate["uses"]
     result["pool_remaining"] = gate["remaining"]
-    result["ip_remaining"]   = rate["remaining"]
 
-    # Cache result (no GEO/PageSpeed to keep cache clean)
-    if not req.geo and not req.pagespeed:
+    # Cache result (no GEO/PageSpeed/deep crawl to keep cache clean)
+    if not req.geo and not req.pagespeed and not js_mode:
         set_cached(req.url, req.keyword, result)
 
     return result
@@ -320,15 +397,6 @@ async def analyze(req: AnalyzeRequest, request: Request):
 
 @app.post("/competitors")
 async def competitors(req: CompetitorsRequest, request: Request):
-    ip   = _client_ip(request)
-    rate = check_ip_rate_limit(ip)
-
-    if not rate["allowed"]:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Daily limit of {DAILY_FREE_LIMIT} checks reached. Come back tomorrow!"
-        )
-
     gate = _gate(req.user_api_keys)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
@@ -489,6 +557,25 @@ async def schema_endpoint(req: SchemaRequest, request: Request):
     return {"url": req.url, **schema_data}
 
 
+@app.post("/local-seo")
+async def local_seo_endpoint(req: SuggestMetaRequest, request: Request):
+    """Analyze page for local SEO signals."""
+    try:
+        result = await _run(_full_seo_analysis, req.url, req.keyword, {})
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    soup = result.pop("_soup")
+    text = result.pop("_text")
+
+    try:
+        local_data = await _run(analyze_local_seo, req.url, soup, text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return {"url": req.url, "keyword": req.keyword, **local_data}
+
+
 @app.post("/compare")
 async def compare(req: CompareRequest, request: Request):
     gate = _gate(req.user_api_keys)
@@ -550,7 +637,137 @@ async def pagespeed(req: PageSpeedRequest, request: Request):
                              pool_uses=gate["uses"], pool_remaining=gate["remaining"])
 
 
+class TrackRequest(BaseModel):
+    url: str
+    keyword: str
+
+
+@app.post("/track")
+async def track_keyword(req: TrackRequest, request: Request):
+    """Save a URL+keyword for rank tracking, then immediately check its SERP position."""
+    supabase_url = os.environ.get("SUPABASE_URL", "")
+    supabase_key = os.environ.get("SUPABASE_KEY", "")
+    serper_key   = os.environ.get("SERPER_API_KEY", "")
+
+    from rank_tracker import save_tracking, check_rank, save_rank_result
+
+    try:
+        row = await _run(save_tracking, req.url, req.keyword, supabase_url, supabase_key)
+    except Exception as exc:
+        logger.error(f"/track save_tracking error: {exc}")
+        raise HTTPException(status_code=502, detail=f"Failed to save tracking: {exc}")
+
+    rank_result = None
+    if serper_key:
+        try:
+            rank_result = await _run(check_rank, req.url, req.keyword, serper_key)
+            await _run(
+                save_rank_result,
+                row["id"], rank_result["position"], supabase_url, supabase_key,
+            )
+        except Exception as exc:
+            logger.warning(f"/track check_rank error: {exc}")
+            rank_result = {"error": str(exc)}
+
+    return {"tracking": row, "rank": rank_result}
+
+
+@app.get("/rankings")
+async def get_rankings(url: str, request: Request):
+    """Get all tracked keywords + rank history for a URL."""
+    supabase_url = os.environ.get("SUPABASE_URL", "")
+    supabase_key = os.environ.get("SUPABASE_KEY", "")
+
+    from rank_tracker import get_tracking_history
+
+    try:
+        history = await _run(get_tracking_history, url, supabase_url, supabase_key)
+    except Exception as exc:
+        logger.error(f"/rankings error: {exc}")
+        raise HTTPException(status_code=502, detail=f"Failed to fetch rankings: {exc}")
+
+    return {"url": url, "tracked": history}
+
+
+class ContactRequest(BaseModel):
+    name:    str = Field(min_length=1, max_length=100)
+    email:   str = Field(min_length=5, max_length=200)
+    message: str = Field(min_length=1, max_length=3000)
+
+# Simple in-process per-IP rate limiter for /contact (no Redis dep needed)
+_contact_ips: dict = {}
+
+def _contact_rate_ok(ip: str) -> bool:
+    """Allow max 3 submissions per IP per 10 minutes."""
+    import time
+    now = time.time()
+    window = 600  # 10 min
+    calls = _contact_ips.get(ip, [])
+    calls = [t for t in calls if now - t < window]
+    if len(calls) >= 3:
+        return False
+    calls.append(now)
+    _contact_ips[ip] = calls
+    return True
+
+
+@app.post("/contact")
+async def contact_form(req: ContactRequest, request: Request):
+    """Send contact form email via Gmail SMTP. Credentials from env vars."""
+    import re as _re, smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    # Basic email format check
+    if not _re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', req.email):
+        raise HTTPException(status_code=400, detail="Invalid email address")
+
+    # Per-IP rate limit
+    ip = _client_ip(request)
+    if not _contact_rate_ok(ip):
+        raise HTTPException(status_code=429, detail="Too many contact requests. Try again later.")
+
+    gmail_user = os.environ.get("GMAIL_USER", "")
+    gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "")
+    recipient  = os.environ.get("CONTACT_RECIPIENT", "")
+
+    if not gmail_user or not gmail_pass or not recipient:
+        # Silently accept but log — don't expose why it failed to client
+        logger.warning(f"Contact form submission from {req.email} (email not configured)")
+        return {"ok": True}
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"RankSpy Contact: {req.name}"
+        msg["From"] = gmail_user
+        msg["To"] = recipient
+
+        body = f"""
+New contact form submission from RankSpy AI:
+
+Name: {req.name}
+Email: {req.email}
+
+Message:
+{req.message}
+        """.strip()
+
+        msg.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_user, gmail_pass)
+            server.sendmail(gmail_user, recipient, msg.as_string())
+
+        logger.info(f"Contact email sent from {req.email}")
+        return {"ok": True}
+    except Exception as exc:
+        logger.error(f"Contact email failed: {exc}")
+        # Still return ok to not expose email config details
+        return {"ok": True}
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception on {request.url}: {exc}", exc_info=True)
-    return JSONResponse(status_code=500, content={"detail": f"Internal server error: {exc}"})
+    # Log internally with full detail, never expose stack trace to client
+    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})

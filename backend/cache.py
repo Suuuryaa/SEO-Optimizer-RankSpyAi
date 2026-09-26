@@ -24,7 +24,7 @@ _TIMEOUT   = 5
 _RESULT_TTL = 86400   # 24 h
 _RATE_TTL   = 90000   # 25 h  (slight padding so midnight resets cleanly)
 
-DAILY_FREE_LIMIT = 3
+DAILY_FREE_LIMIT = 10  # demo mode — global pool of 10 is the real cap
 
 
 def _headers() -> dict:
