@@ -13,7 +13,8 @@ import requests
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-_DB_PATH = os.path.join(os.path.dirname(__file__), "rank_tracker.db")
+# /data is a Railway persistent volume mount; fall back to local dir if not mounted
+_DB_PATH = "/data/rank_tracker.db" if os.path.isdir("/data") else os.path.join(os.path.dirname(__file__), "rank_tracker.db")
 
 
 # ── SQLite fallback ────────────────────────────────────────────────────────────

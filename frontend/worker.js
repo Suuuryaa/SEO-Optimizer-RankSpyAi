@@ -13,7 +13,7 @@ export default {
       'Content-Security-Policy',
       [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline'",
+        "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
         "connect-src 'self' https://affectionate-recreation-production-e508.up.railway.app",
         "img-src 'self' data:",
