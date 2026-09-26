@@ -714,7 +714,7 @@ def _contact_rate_ok(ip: str) -> bool:
 @app.post("/contact")
 async def contact_form(req: ContactRequest, request: Request):
     """Send contact form email via Gmail SMTP. Credentials from env vars."""
-    import re as _re, smtplib
+    import re as _re, smtplib, threading
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
 
@@ -732,38 +732,52 @@ async def contact_form(req: ContactRequest, request: Request):
     recipient  = os.environ.get("CONTACT_RECIPIENT", "")
 
     if not gmail_user or not gmail_pass or not recipient:
-        # Silently accept but log — don't expose why it failed to client
         logger.warning(f"Contact form submission from {req.email} (email not configured)")
         return {"ok": True}
 
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"RankSpy Contact: {req.name}"
-        msg["From"] = gmail_user
-        msg["To"] = recipient
-
-        body = f"""
-New contact form submission from RankSpy AI:
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"RankSpy Contact: {req.name}"
+    msg["From"] = gmail_user
+    msg["To"] = recipient
+    body = f"""New contact form submission from RankSpy AI:
 
 Name: {req.name}
 Email: {req.email}
 
 Message:
-{req.message}
-        """.strip()
+{req.message}""".strip()
+    msg.attach(MIMEText(body, "plain"))
+    raw = msg.as_string()
 
-        msg.attach(MIMEText(body, "plain"))
+    def _send():
+        try:
+            import requests as _req
+            resend_key = os.environ.get("RESEND_API_KEY", "")
+            if resend_key:
+                resp = _req.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+                    json={"from": "RankSpy AI <contact@rankspyseo.xyz>", "to": [recipient],
+                          "subject": f"RankSpy Contact: {req.name}",
+                          "text": body},
+                    timeout=15,
+                )
+                if resp.status_code in (200, 201):
+                    logger.info(f"Contact email sent via Resend from {req.email}")
+                else:
+                    logger.error(f"Resend failed: {resp.status_code} {resp.text}")
+            else:
+                with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+                    server.ehlo()
+                    server.starttls()
+                    server.login(gmail_user, gmail_pass)
+                    server.sendmail(gmail_user, recipient, raw)
+                logger.info(f"Contact email sent via SMTP from {req.email}")
+        except Exception as exc:
+            logger.error(f"Contact email failed: {exc}")
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(gmail_user, gmail_pass)
-            server.sendmail(gmail_user, recipient, msg.as_string())
-
-        logger.info(f"Contact email sent from {req.email}")
-        return {"ok": True}
-    except Exception as exc:
-        logger.error(f"Contact email failed: {exc}")
-        # Still return ok to not expose email config details
-        return {"ok": True}
+    threading.Thread(target=_send, daemon=True).start()
+    return {"ok": True}
 
 
 @app.exception_handler(Exception)
