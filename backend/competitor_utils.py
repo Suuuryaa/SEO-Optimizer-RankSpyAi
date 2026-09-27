@@ -183,13 +183,18 @@ def build_full_serp_table(results, primary_url=""):
 
 
 def filter_direct_competitors(results, primary_url=""):
-    """Filter to show only direct competitors (real businesses)"""
+    """Filter to show only direct competitors (real businesses), one entry per domain"""
     primary_domain = _get_domain(primary_url) if primary_url else ""
     filtered = []
+    seen_domains = set()
     direct_rank = 1
     for i, item in enumerate(results, start=1):
         comp_type = classify_competitor(item["link"], item.get("title", ""), primary_domain)
         if comp_type in ["Direct Competitor", "Primary Venue"]:
+            domain = _get_domain(item.get("link", ""))
+            if domain in seen_domains:
+                continue
+            seen_domains.add(domain)
             filtered.append({
                 "Direct Rank": direct_rank,
                 "SERP Rank": i,
