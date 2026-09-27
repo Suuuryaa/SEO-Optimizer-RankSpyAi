@@ -449,8 +449,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
             filter_direct_competitors, 3, keys["gemini"] or None,
         )
     except Exception as exc:
-        import traceback
-        logger.error(f"/competitors discovery error: {exc}\n{traceback.format_exc()}")
+        logger.error(f"/competitors discovery error: {exc}")
         raise HTTPException(status_code=502, detail="Competitor discovery failed. Please try again.")
 
     # Analyse competitors in parallel
