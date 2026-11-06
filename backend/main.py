@@ -425,6 +425,64 @@ class ContentBriefRequest(BaseModel):
         extra = "ignore"
 
 
+# ── Background scan jobs ──────────────────────────────────────────────────────
+# A scan can take 20-60 s, and Railway's proxy cuts any single request at 60 s.
+# POST /jobs/... returns a job id at once; the scan runs as a task that records
+# its current step; the page polls GET /jobs/{id}. Jobs live in this process
+# (one replica) and are forgotten 15 minutes after they finish.
+import contextvars
+import time as _time
+import uuid
+
+_JOBS: dict[str, dict] = {}
+_JOB_TTL = 15 * 60
+_JOB_SLOTS = asyncio.Semaphore(int(os.getenv("MAX_PARALLEL_SCANS", "3")))
+_current_job: contextvars.ContextVar = contextvars.ContextVar("current_job", default=None)
+
+
+def _step(label: str) -> None:
+    """Record progress on the running job (no-op for the plain sync endpoints)."""
+    job = _current_job.get()
+    if job is not None:
+        job["step"] = label
+        job["steps"].append(label)
+
+
+def _purge_jobs() -> None:
+    now = _time.time()
+    for jid in [j for j, v in _JOBS.items() if v.get("finished") and now - v["finished"] > _JOB_TTL]:
+        _JOBS.pop(jid, None)
+
+
+async def _run_job(job: dict, make_coro) -> None:
+    _current_job.set(job)
+    async with _JOB_SLOTS:
+        job["status"] = "running"
+        try:
+            result = await make_coro()
+            job["result"] = result.model_dump() if hasattr(result, "model_dump") else result
+            job["status"] = "done"
+        except HTTPException as exc:
+            job.update(status="error", error=str(exc.detail), status_code=exc.status_code)
+        except Exception as exc:
+            logger.error(f"job {job['id']} failed: {exc}", exc_info=True)
+            job.update(status="error", error="Scan failed. Please try again.", status_code=500)
+        finally:
+            job["finished"] = _time.time()
+
+
+def _start_job(kind: str, make_coro) -> dict:
+    _purge_jobs()
+    if len(_JOBS) > 500:
+        raise HTTPException(status_code=503, detail="The server is busy. Please try again in a minute.")
+    jid = uuid.uuid4().hex
+    job = {"id": jid, "kind": kind, "status": "queued", "step": "Waiting to start", "steps": [],
+           "created": _time.time(), "finished": None}
+    _JOBS[jid] = job
+    asyncio.create_task(_run_job(job, make_coro))
+    return {"job_id": jid, "status": "queued"}
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
@@ -475,6 +533,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
         return cached
 
     # ── Run analysis pipeline ─────────────────────────────────────────────────
+    _step("Fetching and reading the page")
     try:
         result = await _run(_full_seo_analysis, req.url, req.keyword, keys)
     except Exception as exc:
@@ -483,6 +542,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
 
     # ── Deep Playwright crawl (JS mode) ───────────────────────────────────────
     if js_mode:
+        _step("Crawling sub-pages with a browser")
         try:
             logger.info(f"/analyze deep crawl: {req.url}")
             crawl_data = await deep_crawl(req.url)
@@ -511,6 +571,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
 
     # ── GEO analysis ──────────────────────────────────────────────────────────
     if req.geo:
+        _step("Checking AI visibility (GEO)")
         try:
             crawler_data    = await _run(check_ai_crawlers, req.url)
             citability_data = await _run(score_citability, soup)
@@ -533,6 +594,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
 
     # ── PageSpeed ─────────────────────────────────────────────────────────────
     if req.pagespeed:
+        _step("Running Google PageSpeed")
         if not keys["pagespeed"]:
             result["pagespeed"] = {"error": "PAGESPEED_API_KEY not configured."}
         else:
@@ -570,6 +632,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
         raise HTTPException(status_code=400, detail="SERPER_API_KEY is required.")
 
     # Primary analysis
+    _step("Analysing your page")
     try:
         primary_raw = await _run(_full_seo_analysis, req.url, req.keyword, keys)
     except Exception as exc:
@@ -580,6 +643,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
     primary_text = primary_raw.pop("_text", "")
 
     # Competitor discovery
+    _step("Finding your competitors")
     try:
         _, direct_competitors, search_log, location_msg = await _run(
             progressive_competitor_search,
@@ -605,6 +669,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
             return {"Venue Name": comp_url, "URL": comp_url, "SEO Score": 0,
                     "Score Band": "Blocked", "Role": "Direct Competitor", "error": str(exc)}
 
+    _step(f"Analysing {min(len(direct_competitors), 8)} competitor sites")
     comp_tasks = [_analyze_comp(c) for c in direct_competitors[:8]]
     comp_rows  = [r for r in await asyncio.gather(*comp_tasks) if r]
 
@@ -613,6 +678,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
     primary_raw["semantic"] = semantic
 
     # Content brief
+    _step("Building the content brief")
     try:
         brief = await _run(
             generate_content_brief,
@@ -629,6 +695,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
 
     # Real Google positions for the site and each competitor (one Serper search).
     # The report used to hard-code the site as #1, so every report claimed first place.
+    _step("Checking real Google positions")
     positions = await _run(_google_positions, req.keyword, [req.url] + [r.get("URL", "") for r in comp_rows], keys["serper"])
     def _pos(u):
         return "unknown" if positions is None else positions.get(u)
@@ -640,6 +707,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
     # AI summary
     ai_summary = None
     if keys["gemini"] and comp_rows:
+        _step("Writing the AI strategy report")
         try:
             primary_row = {
                 "Venue Name":         primary_raw.get("title", req.url),
@@ -669,6 +737,33 @@ async def competitors(req: CompetitorsRequest, request: Request):
         ai_summary=ai_summary,
         pool_uses=int(gate["uses"]), pool_remaining=int(gate["remaining"]),
     )
+
+
+@app.post("/jobs/analyze", status_code=202)
+async def analyze_job(req: AnalyzeRequest, request: Request):
+    """Start an analysis in the background; poll GET /jobs/{job_id}."""
+    return _start_job("analyze", lambda: analyze(req, request))
+
+
+@app.post("/jobs/competitors", status_code=202)
+async def competitors_job(req: CompetitorsRequest, request: Request):
+    """Start a competitor search in the background; poll GET /jobs/{job_id}."""
+    return _start_job("competitors", lambda: competitors(req, request))
+
+
+@app.get("/jobs/{job_id}")
+async def job_status(job_id: str):
+    job = _JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="This scan is no longer available. Please run it again.")
+    out = {k: job[k] for k in ("id", "kind", "status", "step", "steps")}
+    out["elapsed"] = round((job["finished"] or _time.time()) - job["created"], 1)
+    if job["status"] == "done":
+        out["result"] = job["result"]
+    elif job["status"] == "error":
+        out["error"] = job.get("error")
+        out["status_code"] = job.get("status_code")
+    return out
 
 
 @app.post("/suggest-meta")

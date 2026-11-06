@@ -17,7 +17,8 @@ import Footer from './components/Footer'
 import LegalModal from './components/LegalModal'
 import ContentBriefPanel from './components/results/ContentBriefPanel'
 
-function LoadingOverlay() {
+function LoadingOverlay({ progress }) {
+  const steps = progress?.steps || []
   return (
     <div
       style={{
@@ -30,9 +31,19 @@ function LoadingOverlay() {
       }}
     >
       <div className="spinner" />
-      <div style={{ fontSize: '14px', color: '#606060', letterSpacing: '0.04em' }}>
-        Analyzing your page... this may take a moment
+      <div style={{ fontSize: '14px', color: '#c0c0c0', letterSpacing: '0.04em' }} aria-live="polite">
+        {progress?.step ? `${progress.step}…` : 'Starting your scan…'}
       </div>
+      {steps.length > 1 && (
+        <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: '#8a8a8a' }}>
+          {steps.slice(0, -1).map((s, i) => (
+            <li key={i}><span style={{ color: '#22c55e' }}>✓</span> {s}</li>
+          ))}
+        </ol>
+      )}
+      {progress?.elapsed > 0 && (
+        <div style={{ fontSize: '11px', color: '#8a8a8a' }}>{Math.round(progress.elapsed)} s elapsed</div>
+      )}
     </div>
   )
 }
@@ -157,6 +168,7 @@ export default function App() {
   const [legalPage, setLegalPage] = useState(null)
   const [analyzeParams, setAnalyzeParams] = useState(null)
   const [showContact, setShowContact] = useState(false)
+  const [progress, setProgress] = useState(null)
 
   async function handleAnalyze({ url, keyword, crawlMode, geo, userApiKeys }) {
     setLoading(true)
@@ -165,8 +177,9 @@ export default function App() {
     setCompData(null)
     setMode('seo')
     setAnalyzeParams({ url, keyword, crawlMode, geo })
+    setProgress(null)
     try {
-      const result = await analyzeUrl({ url, keyword, geo, crawlMode, userApiKeys })
+      const result = await analyzeUrl({ url, keyword, geo, crawlMode, userApiKeys, onProgress: setProgress })
       setSeoData(result)
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || 'Failed to analyze URL. Make sure the backend is running.')
@@ -182,8 +195,9 @@ export default function App() {
     setSeoData(null)
     setCompData(null)
     setMode('competitors')
+    setProgress(null)
     try {
-      const result = await findCompetitors({ url, keyword, userApiKeys })
+      const result = await findCompetitors({ url, keyword, userApiKeys, onProgress: setProgress })
       setCompData(result)
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || 'Failed to fetch competitors. Make sure the backend is running.')
@@ -219,7 +233,7 @@ export default function App() {
 
         {error && <ErrorBanner message={error} />}
 
-        {loading && <LoadingOverlay />}
+        {loading && <LoadingOverlay progress={progress} />}
 
         {!seoData && !compData && !loading && (
           <div>
