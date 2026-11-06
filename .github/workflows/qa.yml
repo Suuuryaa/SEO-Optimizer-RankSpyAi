@@ -71,7 +71,7 @@ jobs:
     steps:
       - name: Check /health endpoint
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://funlab-seo-dashboard-production.up.railway.app/health)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://affectionate-recreation-production-e508.up.railway.app/health)
           echo "Backend status: $STATUS"
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Backend returned HTTP $STATUS"
@@ -79,11 +79,11 @@ jobs:
 
       - name: Check /rate-status endpoint
         run: |
-          curl -s https://funlab-seo-dashboard-production.up.railway.app/rate-status | python3 -m json.tool
+          curl -s https://affectionate-recreation-production-e508.up.railway.app/rate-status | python3 -m json.tool
 
       - name: Smoke test /analyze
         run: |
-          RESP=$(curl -s -X POST https://funlab-seo-dashboard-production.up.railway.app/analyze \
+          RESP=$(curl -s -X POST https://affectionate-recreation-production-e508.up.railway.app/analyze \
             -H "Content-Type: application/json" \
             -d '{"url":"https://example.com","keyword":"test"}' \
             --max-time 90)

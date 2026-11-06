@@ -32,28 +32,44 @@ _STOP = {
 }
 
 
+_FUNCTION_WORDS = {'the','a','an','and','or','of','to','in','for','with','is','are','on','that','this','it','you','your','we','our','be','as','by','at','from'}
+
+
+def _prose(text: str) -> str:
+    """Keep only natural-language sentences. Runs of tokens with no function
+    words (minified class names, IDs, tracking strings) are dropped."""
+    keep = []
+    for chunk in re.split(r'[.!?\n]+', text.lower()):
+        words = re.findall(r"[a-z']+", chunk)
+        if len(words) >= 6 and sum(w in _FUNCTION_WORDS for w in words) / len(words) >= 0.06:
+            keep.append(chunk)
+    return " ".join(keep)
+
+
 def _extract_keywords(text: str, top_n: int = 30) -> list[str]:
-    words = re.findall(r'\b[a-z]{4,}\b', text.lower())
+    words = re.findall(r'\b[a-z]{4,}\b', _prose(text))
     words = [w for w in words if w not in _STOP]
     return [word for word, _ in Counter(words).most_common(top_n)]
 
 
 def _find_topic_gaps(primary_text: str, competitor_texts: list[str]) -> list[str]:
-    """Return topics covered by ≥2 competitors but absent from primary page."""
-    primary_kws = set(_extract_keywords(primary_text))
+    """Topics several competitors cover prominently that never appear on the primary page."""
     competitor_kw_sets = [set(_extract_keywords(t)) for t in competitor_texts if t]
-
-    # Topics in at least half of competitors but not in primary
     if not competitor_kw_sets:
         return []
 
-    threshold = max(1, len(competitor_kw_sets) // 2)
+    # Compare against EVERY word on the primary page, not just its top 30
+    primary_words = set(re.findall(r'\b[a-z]{4,}\b', primary_text.lower()))
+
+    n = len(competitor_kw_sets)
+    threshold = 1 if n == 1 else max(2, (n + 1) // 2)
     gap_topics = []
     for kw in set.union(*competitor_kw_sets):
-        if kw not in primary_kws:
-            count = sum(1 for s in competitor_kw_sets if kw in s)
-            if count >= threshold:
-                gap_topics.append((kw, count))
+        if kw in primary_words:
+            continue
+        count = sum(1 for s in competitor_kw_sets if kw in s)
+        if count >= threshold:
+            gap_topics.append((kw, count))
 
     gap_topics.sort(key=lambda x: x[1], reverse=True)
     return [kw for kw, _ in gap_topics[:15]]
@@ -91,7 +107,12 @@ def generate_content_brief(
     primary_meta   = primary.get("meta_description", "")
 
     # Filter out errored competitors
-    valid_comps = [c for c in competitors if not c.get("error") and c.get("word_count")]
+    valid_comps = [
+        c for c in competitors
+        if not c.get("error")
+        and c.get("Score Band") != "Blocked"
+        and (c.get("Word Count") or c.get("word_count"))
+    ]
 
     avg_score  = _avg(valid_comps, "SEO Score") or _avg(valid_comps, "seo_score") or 0
     avg_words  = int(_avg(valid_comps, "Word Count") or _avg(valid_comps, "word_count") or 0)
@@ -162,15 +183,9 @@ Write a concise, actionable content brief (150–200 words) covering:
 
 Be specific, direct, and avoid filler language."""
 
-            resp = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_api_key}",
-                json={"contents": [{"parts": [{"text": prompt}]}]},
-                timeout=30,
-            )
-            if resp.status_code == 200:
-                ai_brief = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-            else:
-                ai_brief = None
+            from ai.gemini import generate_text
+            ai_brief = generate_text(gemini_api_key, prompt, temperature=0.5,
+                                     max_output_tokens=8192, timeout=30)
         except Exception as exc:
             logger.warning(f"content_brief Gemini error: {exc}")
             ai_brief = None

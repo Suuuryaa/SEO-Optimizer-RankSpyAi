@@ -36,7 +36,7 @@ def get_venue_name(url, title):
     return brand
 
 
-def analyze_venue(url, keyword):
+def analyze_venue(url, keyword, include_text=False):
     """
     Comprehensive venue analysis with enhanced scoring.
     
@@ -94,7 +94,7 @@ def analyze_venue(url, keyword):
             mobile_viewport=tech_seo.get('mobile_viewport', False)
         )
 
-        return {
+        row = {
             "Venue Name": get_venue_name(url, title),
             "URL": url,
             "SEO Score": score,
@@ -108,7 +108,10 @@ def analyze_venue(url, keyword):
             "HTTPS": "✓" if tech_seo.get('https_enabled') else "✗",
             "Schema": "✓" if has_schema else "✗"
         }
-    
+        if include_text:
+            row["_text"] = text[:20000]   # internal only — caller must pop before responding
+        return row
+
     except Exception as e:
         logger.error(f"Error analyzing {url}: {e}")
         return {

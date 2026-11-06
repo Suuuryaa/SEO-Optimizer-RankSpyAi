@@ -132,15 +132,11 @@ async def deep_crawl(url: str, max_pages: int = _MAX_PAGES) -> dict:
                     if _parsed3.scheme not in ("http", "https"):
                         await route.abort()
                         return
-                    _h3 = _parsed3.hostname or ""
-                    try:
-                        _r3 = _sock3.gethostbyname(_h3)
-                        _a3 = _ipa3.ip_address(_r3)
-                        if _a3.is_private or _a3.is_loopback or _a3.is_link_local:
-                            await route.abort()
-                            return
-                    except OSError:
-                        pass
+                    # Every resolved address, IPv4 and IPv6 (gethostbyname saw IPv4 only)
+                    from seo_utils import _is_public_url
+                    if not await asyncio.to_thread(_is_public_url, req_url):
+                        await route.abort()
+                        return
                 except Exception:
                     await route.abort()
                     return

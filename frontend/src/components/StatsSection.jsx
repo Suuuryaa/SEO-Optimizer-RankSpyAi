@@ -5,7 +5,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 gsap.registerPlugin(ScrollTrigger)
 
 const STATS = [
-  { value: '200+', label: 'SEO Factors Checked' },
+  { value: '50+', label: 'SEO Factors Checked' },
   { value: '< 60s', label: 'Analysis Time' },
   { value: '8+', label: 'Competitors Found' },
   { value: 'Free', label: 'No Sign-Up Required' },

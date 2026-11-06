@@ -4,7 +4,7 @@ from urllib.parse import urlparse, urljoin
 import re
 import logging
 import time
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_not_exception_type
 import json
 
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +39,69 @@ except Exception as _e:
 _MIN_HTML_BYTES = 500
 
 
+class FetchError(Exception):
+    """A definite fetch outcome the user should be told about (not retried).
+
+    kind: not_found | server_error | unreachable | timeout | blocked
+    """
+
+    def __init__(self, kind: str, message: str, status: int | None = None):
+        super().__init__(message)
+        self.kind = kind
+        self.status = status
+
+
+# Phrases that only appear on bot-challenge / block interstitials, not real pages
+_BLOCK_MARKERS = (
+    "attention required! | cloudflare", "just a moment...", "checking your browser before accessing",
+    "enable javascript and cookies to continue", "verify you are a human", "are you a robot",
+    "pardon our interruption", "request unsuccessful. incapsula", "px-captcha", "captcha-delivery",
+    "enter the characters you see below", "to discuss automated access to amazon data",
+    "access denied</title>", "you don't have permission to access", "unusual traffic from your computer",
+    "sorry, you have been blocked",
+)
+
+
+def _looks_blocked(html: str) -> bool:
+    """True when the HTML is a bot-challenge or access-denied page rather than the site."""
+    head = html[:20000].lower()
+    return any(m in head for m in _BLOCK_MARKERS)
+
+
+def _is_public_url(url: str) -> bool:
+    """True only if every address the host resolves to (IPv4 and IPv6) is public."""
+    import ipaddress, socket
+    from urllib.parse import urlparse
+    host = urlparse(url).hostname or ""
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return True  # unresolvable here: the fetch itself will fail
+    for info in infos:
+        addr = ipaddress.ip_address(info[4][0].split("%")[0])
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved or addr.is_unspecified:
+            return False
+    return True
+
+
+# Paid proxies: at most ONE paid attempt per scan, within a daily budget each,
+# so blocked sites can't drain the free monthly credits (ScraperAPI 1,000, ZenRows 5,000).
+_PROXY_BUDGETS = {
+    "scraperapi": int(_os.environ.get("SCRAPERAPI_DAILY_LIMIT", "30")),
+    "zenrows": int(_os.environ.get("ZENROWS_DAILY_LIMIT", "150")),
+}
+
+
+def _proxy_budget_ok(name: str) -> bool:
+    try:
+        from cache import check_ip_quota
+    except Exception:
+        return True
+    return check_ip_quota("all", f"proxy-{name}", _PROXY_BUDGETS[name])
+
+
 def _html_from_scrapling_response(resp):
     """Extract HTML string from a Scrapling Response object."""
     html = resp.html_content
@@ -49,22 +112,35 @@ def _html_from_scrapling_response(resp):
 
 def _fetch_with_fetcher(url):
     """Tier 2: curl_cffi TLS fingerprint impersonation — bypasses Cloudflare 403s."""
-    resp = _Fetcher.get(
-        url,
-        timeout=25,
-        stealthy_headers=True,   # Auto-generate real browser headers
-        follow_redirects=True,
-    )
+    # Redirects are followed by hand so every hop gets the private-address check
+    current = url
+    for _ in range(6):
+        if not _is_public_url(current):
+            raise FetchError("blocked", "That address points to a private network and can't be scanned.")
+        resp = _Fetcher.get(current, timeout=20, stealthy_headers=True, follow_redirects=False)
+        if resp.status in (301, 302, 303, 307, 308):
+            hdrs = {str(k).lower(): v for k, v in (getattr(resp, "headers", {}) or {}).items()}
+            loc = hdrs.get("location")
+            if not loc:
+                break
+            from urllib.parse import urljoin
+            current = urljoin(current, loc)
+            continue
+        break
     if resp.status not in (200, 206):
         raise Exception(f"Fetcher got HTTP {resp.status}")
     html = _html_from_scrapling_response(resp)
     if len(html) < _MIN_HTML_BYTES:
         raise Exception(f"Fetcher returned near-empty page ({len(html)} chars) — JS-only SPA")
+    if _looks_blocked(html):
+        raise Exception("Fetcher got a bot-block page")
     return BeautifulSoup(html, "lxml"), html
 
 
 def _fetch_with_stealthy(url):
-    """Tier 3: Playwright + Patchright headless browser — handles JS SPAs + Cloudflare Turnstile."""
+    """Tier 5: Playwright + Patchright headless browser — handles JS SPAs + Cloudflare Turnstile."""
+    if not _is_public_url(url):
+        raise FetchError("blocked", "That address points to a private network and can't be scanned.")
     resp = _StealthyFetcher.fetch(
         url,
         headless=True,
@@ -75,11 +151,17 @@ def _fetch_with_stealthy(url):
         block_ads=True,
         google_search=True,      # Set Google referer (looks more natural)
     )
+    final_url = str(getattr(resp, "url", "") or url)
+    if not _is_public_url(final_url):
+        # The browser was redirected somewhere private: discard what it saw
+        raise FetchError("blocked", "That address redirects to a private network and can't be scanned.")
     if resp.status not in (200, 206):
         raise Exception(f"StealthyFetcher got HTTP {resp.status}")
     html = _html_from_scrapling_response(resp)
     if len(html) < _MIN_HTML_BYTES:
         raise Exception(f"StealthyFetcher returned near-empty page ({len(html)} chars)")
+    if _looks_blocked(html):
+        raise Exception("StealthyFetcher got a bot-block page")
     return BeautifulSoup(html, "lxml"), html
 
 
@@ -89,25 +171,29 @@ _ZENROWS_API_KEY = _os.environ.get("ZENROWS_API_KEY", "")
 
 def _fetch_with_scraperapi(url):
     """Tier 3: ScraperAPI residential proxy."""
-    api_url = f"http://api.scraperapi.com?api_key={_SCRAPER_API_KEY}&url={url}&render=false"
-    resp = requests.get(api_url, timeout=60)
+    resp = requests.get("http://api.scraperapi.com",
+                        params={"api_key": _SCRAPER_API_KEY, "url": url, "render": "false"}, timeout=25)
     if resp.status_code != 200:
         raise Exception(f"ScraperAPI returned HTTP {resp.status_code}")
     html = resp.text
     if len(html) < _MIN_HTML_BYTES:
         raise Exception(f"ScraperAPI returned thin page ({len(html)} chars)")
+    if _looks_blocked(html):
+        raise Exception("ScraperAPI got a bot-block page")
     return BeautifulSoup(html, "lxml"), html
 
 
 def _fetch_with_zenrows(url):
     """Tier 4: ZenRows residential proxy — fallback if ScraperAPI fails."""
-    api_url = f"https://api.zenrows.com/v1/?apikey={_ZENROWS_API_KEY}&url={url}"
-    resp = requests.get(api_url, timeout=60)
+    resp = requests.get("https://api.zenrows.com/v1/",
+                        params={"apikey": _ZENROWS_API_KEY, "url": url}, timeout=25)
     if resp.status_code != 200:
         raise Exception(f"ZenRows returned HTTP {resp.status_code}")
     html = resp.text
     if len(html) < _MIN_HTML_BYTES:
         raise Exception(f"ZenRows returned thin page ({len(html)} chars)")
+    if _looks_blocked(html):
+        raise Exception("ZenRows got a bot-block page")
     return BeautifulSoup(html, "lxml"), html
 
 
@@ -125,7 +211,9 @@ def get_page_soup(url):
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
+        # No "br": requests can't decode Brotli without the brotli package, and
+        # CDN-fronted sites then return compressed bytes we'd parse as junk.
+        "Accept-Encoding": "gzip, deflate",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
         "Sec-Fetch-Dest": "document",
@@ -134,6 +222,7 @@ def get_page_soup(url):
     }
 
     tier1_blocked = False
+    _t0 = time.time()
     try:
         resp = requests.get(url, headers=headers, timeout=20, allow_redirects=False, stream=True)
         # Enforce 5 MB response size cap before reading body
@@ -170,23 +259,43 @@ def get_page_soup(url):
                     raise Exception("Redirect response exceeds 5 MB size cap")
             resp._content = raw
             hops += 1
-        if resp.status_code in (403, 429, 503):
+        code = resp.status_code
+        if code in (401, 403, 429, 503):
             tier1_blocked = True
-            logger.info(f"Tier1 got {resp.status_code} from {url} — escalating to Fetcher")
+            logger.info(f"Tier1 got {code} from {url} — escalating to Fetcher")
+        elif code in (404, 410):
+            raise FetchError("not_found", f"The page returned {code} Not Found.", code)
+        elif code >= 500:
+            raise FetchError("server_error", f"The site returned a server error ({code}).", code)
+        elif code >= 400:
+            raise FetchError("not_found", f"The page returned HTTP {code}.", code)
         else:
-            resp.raise_for_status()
-            html = resp.text
-            if len(html) >= _MIN_HTML_BYTES:
+            # No charset in the header → requests assumes Latin-1 and garbles UTF-8 ("â\x80\x94")
+            if "charset" in resp.headers.get("Content-Type", "").lower():
+                html = resp.text
+            else:
+                html = resp.content.decode(resp.apparent_encoding or "utf-8", errors="replace")
+            if _looks_blocked(html):
+                tier1_blocked = True
+                logger.info(f"Tier1 got a bot-block page from {url} — escalating to Fetcher")
+            elif len(html) >= _MIN_HTML_BYTES:
                 return BeautifulSoup(html, "lxml"), html
-            # Too small — may need JS render
-            tier1_blocked = True
-            logger.info(f"Tier1 got thin page ({len(html)} chars) — escalating to Fetcher")
+            else:
+                # Too small — may need JS render
+                tier1_blocked = True
+                logger.info(f"Tier1 got thin page ({len(html)} chars) — escalating to Fetcher")
+    except FetchError:
+        raise
     except requests.exceptions.Timeout:
+        # A site that is slow for us is slow for every tier: fail fast instead of a 60s chain
+        raise FetchError("timeout", "The site took longer than 20 seconds to respond.")
+    except requests.exceptions.ConnectionError as e:
+        msg = str(e)
+        if any(s in msg for s in ("Name or service not known", "nodename nor servname", "NameResolutionError",
+                                  "getaddrinfo failed", "No address associated", "Temporary failure in name resolution")):
+            raise FetchError("unreachable", "We couldn't find that domain. Check the URL is spelled correctly.")
         tier1_blocked = True
-        logger.info(f"Tier1 timeout for {url} — escalating to Fetcher")
-    except requests.exceptions.HTTPError as e:
-        tier1_blocked = True
-        logger.info(f"Tier1 HTTP error for {url}: {e} — escalating to Fetcher")
+        logger.info(f"Tier1 connection error for {url}: {e} — escalating to Fetcher")
     except requests.RequestException as e:
         tier1_blocked = True
         logger.info(f"Tier1 request error for {url}: {e} — escalating to Fetcher")
@@ -202,48 +311,72 @@ def get_page_soup(url):
         except Exception as e:
             logger.info(f"Tier2 Fetcher failed for {url}: {e} — escalating to StealthyFetcher")
 
-    # ── Tier 3: ScraperAPI residential proxy ────────────────────────────────
-    if _SCRAPER_API_KEY:
-        try:
-            logger.info(f"Tier3 ScraperAPI fetching {url}")
-            return _fetch_with_scraperapi(url)
-        except Exception as e:
-            logger.info(f"Tier3 ScraperAPI failed for {url}: {e} — escalating to ZenRows")
-
-    # ── Tier 4: ZenRows residential proxy ───────────────────────────────────
-    if _ZENROWS_API_KEY:
-        try:
-            logger.info(f"Tier4 ZenRows fetching {url}")
-            return _fetch_with_zenrows(url)
-        except Exception as e:
-            logger.info(f"Tier4 ZenRows failed for {url}: {e} — escalating to StealthyFetcher")
+    # ── Tiers 3–4: ONE paid proxy attempt (first provider with budget left) ─
+    paid = [("scraperapi", _SCRAPER_API_KEY, _fetch_with_scraperapi),
+            ("zenrows", _ZENROWS_API_KEY, _fetch_with_zenrows)]
+    if time.time() - _t0 < 20:
+        for name, key, fetch in paid:
+            if not key or not _proxy_budget_ok(name):
+                continue
+            try:
+                logger.info(f"Paid tier {name} fetching {url}")
+                return fetch(url)
+            except Exception as e:
+                logger.info(f"Paid tier {name} failed for {url}: {e} — no further paid attempts")
+            break
 
     # ── Tier 5: StealthyFetcher (Playwright headless + Cloudflare solver) ───
-    if _STEALTHY_AVAILABLE:
+    if _STEALTHY_AVAILABLE and time.time() - _t0 < 20:
         try:
             logger.info(f"Tier5 StealthyFetcher fetching {url}")
             return _fetch_with_stealthy(url)
         except Exception as e:
-            raise Exception(f"All fetch tiers failed for {url}. Last error: {e}")
+            logger.info(f"Tier5 StealthyFetcher failed for {url}: {e}")
 
-    raise Exception(f"Could not fetch {url} — site blocks datacenter IPs. Add SCRAPER_API_KEY or ZENROWS_API_KEY to Streamlit secrets.")
+    raise FetchError("blocked", "This site blocked our scanner, so we couldn't read the page.")
 
 
 # Keep tenacity retry on top for transient network errors
 get_page_soup = retry(
     stop=stop_after_attempt(2),
     wait=wait_exponential(multiplier=1, min=2, max=6),
+    retry=retry_if_not_exception_type(FetchError),
     reraise=True
 )(get_page_soup)
 
 
+# One scan = one fetch: /analyze, then the meta, schema and local-SEO panels all
+# ask for the same URL within a minute. Single replica, so a process cache is enough.
+_PAGE_CACHE: dict = {}
+_PAGE_TTL = 15 * 60
+_PAGE_CACHE_MAX = 64
+_fetch_page_uncached = get_page_soup
+
+
+def get_page_soup(url):
+    """Cached wrapper: returns a fresh soup (callers mutate it) from cached HTML."""
+    now = time.time()
+    hit = _PAGE_CACHE.get(url)
+    if hit and now - hit[0] < _PAGE_TTL:
+        return BeautifulSoup(hit[1], "lxml"), hit[1]
+    soup, html = _fetch_page_uncached(url)
+    if html:
+        if len(_PAGE_CACHE) >= _PAGE_CACHE_MAX:
+            _PAGE_CACHE.pop(min(_PAGE_CACHE, key=lambda k: _PAGE_CACHE[k][0]), None)
+        _PAGE_CACHE[url] = (now, html)
+    return soup, html
+
+
 def _safe_text(value: str, max_len: int = 500) -> str:
-    """Strip HTML tags and limit length — prevents XSS payloads propagating in JSON."""
-    from html import escape
+    """Strip HTML tags and limit length.
+
+    Not HTML-escaped: the React frontend escapes all text it renders, so escaping
+    here showed "&amp;" to users and counted entity characters in title length.
+    """
     import re as _re
     # Remove any HTML tags that survived BeautifulSoup extraction
     clean = _re.sub(r'<[^>]+>', '', value)
-    return escape(clean.strip())[:max_len]
+    return clean.strip()[:max_len]
 
 
 def get_title(soup):

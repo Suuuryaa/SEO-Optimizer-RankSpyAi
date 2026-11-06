@@ -6,13 +6,13 @@ const BASE = import.meta.env.VITE_API_URL || (
 
 const client = axios.create({ baseURL: BASE, timeout: 180000 })
 
-export async function analyzeUrl({ url, keyword, pagespeed = false, geo = false, crawlMode = 'standard' }) {
-  const { data } = await client.post('/analyze', { url, keyword, pagespeed, geo, crawl_mode: crawlMode })
+export async function analyzeUrl({ url, keyword, pagespeed = false, geo = false, crawlMode = 'standard', userApiKeys }) {
+  const { data } = await client.post('/analyze', { url, keyword, pagespeed, geo, crawl_mode: crawlMode, user_api_keys: userApiKeys })
   return data
 }
 
-export async function findCompetitors({ url, keyword }) {
-  const { data } = await client.post('/competitors', { url, keyword })
+export async function findCompetitors({ url, keyword, userApiKeys }) {
+  const { data } = await client.post('/competitors', { url, keyword, user_api_keys: userApiKeys })
   return data
 }
 

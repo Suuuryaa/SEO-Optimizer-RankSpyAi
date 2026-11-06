@@ -3,7 +3,7 @@ import { useState } from 'react'
 const FAQS = [
   {
     q: 'What does RankSpy AI analyze?',
-    a: 'RankSpy AI crawls your URL like a search engine and checks 200+ SEO factors including meta tags, content quality, page speed, link structure, technical configuration, and AI/GEO signals.',
+    a: 'RankSpy AI crawls your URL like a search engine and checks 50+ SEO factors including meta tags, content quality, page speed, link structure, technical configuration, and AI/GEO signals.',
   },
   {
     q: 'Is it really free?',

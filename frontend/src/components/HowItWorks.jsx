@@ -13,7 +13,7 @@ const STEPS = [
   {
     number: '02',
     title: 'We Crawl & Analyze',
-    desc: 'RankSpy AI fetches your page like a search engine bot and runs 200+ checks instantly.',
+    desc: 'RankSpy AI fetches your page like a search engine bot and runs 50+ checks instantly.',
   },
   {
     number: '03',

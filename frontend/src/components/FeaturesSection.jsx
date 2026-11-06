@@ -123,7 +123,7 @@ export default function FeaturesSection() {
             <br />
             <span style={{ color: '#444' }}>Needs to Rank</span>
           </h2>
-          <p style={{ fontSize: '15px', color: '#505050' }}>200+ SEO factors analyzed in seconds.</p>
+          <p style={{ fontSize: '15px', color: '#505050' }}>50+ SEO factors analyzed in seconds.</p>
         </div>
 
         <div

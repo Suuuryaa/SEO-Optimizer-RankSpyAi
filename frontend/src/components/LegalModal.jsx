@@ -18,7 +18,7 @@ The Service is provided "as is" without warranties of any kind. SEO analysis res
 RankSpy AI shall not be liable for any indirect, incidental, or consequential damages arising from use of the Service.
 
 ## Rate Limits
-Free usage is limited to 3 checks per day per device. Limits may change without notice.
+Free usage draws from a shared daily pool of checks, plus per-IP daily caps on some features. Limits may change without notice.
 
 ## Changes
 We reserve the right to modify these terms at any time. Continued use of the Service constitutes acceptance of updated terms.
@@ -30,12 +30,13 @@ For questions, contact us through the website.
 **Effective date:** September 2026
 
 ## What We Collect
-- **URLs you submit** for analysis (processed in real-time, not permanently stored)
+- **URLs and keywords you submit** for analysis. Results may be cached for up to 24 hours to speed up repeat checks.
+- **Your IP address**, held temporarily (up to 25 hours) to enforce daily usage limits and prevent abuse.
+- **URLs and keywords you choose to track** with the rank tracker, stored with their ranking history until removed.
 - **Usage data** via anonymous analytics (page views, feature usage)
-- **Local storage** on your device to track daily check counts (never sent to our servers)
 
 ## What We Don't Collect
-- No account registration required — we collect no personal information
+- No account registration required
 - No cookies for tracking or advertising
 - No email addresses unless you contact us directly
 
@@ -46,10 +47,10 @@ We use the following third-party APIs to deliver results:
 - Google Gemini for AI summaries
 
 ## Data Retention
-URL submissions are processed and discarded. We do not build a database of analyzed pages.
+Cached analysis results expire after 24 hours. Rate-limit counters expire after 25 hours. Tracked keywords are kept until you ask us to remove them.
 
 ## Your Rights
-Since we collect no personal data, there is nothing to access, correct, or delete. Usage analytics are anonymous and cannot be tied to individuals.
+You can ask us to delete tracked keywords or a contact message you sent by contacting us through the website. Usage analytics are anonymous and cannot be tied to individuals.
 
 ## Contact
 For privacy questions, contact us through the website.
@@ -58,10 +59,7 @@ For privacy questions, contact us through the website.
 **Effective date:** September 2026
 
 ## Cookies We Use
-RankSpy AI uses **localStorage** (not traditional cookies) solely to store your daily check count so the limit resets correctly at midnight. This data:
-- Never leaves your device
-- Is not accessible to our servers
-- Can be cleared by clearing your browser's local storage
+RankSpy AI does not set cookies. Daily usage limits are counted on our server, not in your browser.
 
 ## Analytics
 We may use privacy-respecting analytics tools that do not use cookies or track individuals across sites.

@@ -76,7 +76,7 @@ export default function ResultsReport({ data }) {
     !!data.keyword_in_title,
     !!data.keyword_in_meta,
     !!data.keyword_in_h1,
-    data.keyword_density > 0 && data.keyword_density < 5,
+    data.keyword_density >= 0.5 && data.keyword_density <= 3,
   ])
 
   const socialScore = pct([
@@ -96,12 +96,15 @@ export default function ResultsReport({ data }) {
     { label: 'Social / Schema', score: socialScore },
   ]
 
+  // Backend priorities carry an emoji ("🔴 CRITICAL"), so match on the letters only
+  const prio = p => String(p ?? '').toUpperCase().replace(/[^A-Z]/g, '')
   const priorityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
   const sortedRecs = [...recs]
-    .sort((a, b) => (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99))
+    .sort((a, b) => (priorityOrder[prio(a.priority)] ?? 99) - (priorityOrder[prio(b.priority)] ?? 99))
     .slice(0, 10)
 
-  function badgeStyle(p) {
+  function badgeStyle(raw) {
+    const p = prio(raw)
     if (p === 'CRITICAL' || p === 'HIGH') return { bg: 'rgba(230,57,70,0.12)', color: '#e63946', border: 'rgba(230,57,70,0.3)', label: 'Error' }
     if (p === 'MEDIUM') return { bg: 'rgba(234,179,8,0.12)', color: '#eab308', border: 'rgba(234,179,8,0.3)', label: 'Warning' }
     return { bg: 'rgba(59,130,246,0.12)', color: '#3b82f6', border: 'rgba(59,130,246,0.3)', label: 'Tip' }
@@ -236,7 +239,7 @@ export default function ResultsReport({ data }) {
         {/* Stat chips */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {[
-            { label: 'Status', val: tech.https_enabled ? '200 OK' : 'HTTP', color: tech.https_enabled ? '#22c55e' : '#f97316', bg: tech.https_enabled ? 'rgba(34,197,94,0.1)' : 'rgba(249,115,22,0.1)', border: tech.https_enabled ? 'rgba(34,197,94,0.25)' : 'rgba(249,115,22,0.25)' },
+            { label: 'HTTPS', val: tech.https_enabled ? 'Yes' : 'No', color: tech.https_enabled ? '#22c55e' : '#f97316', bg: tech.https_enabled ? 'rgba(34,197,94,0.1)' : 'rgba(249,115,22,0.1)', border: tech.https_enabled ? 'rgba(34,197,94,0.25)' : 'rgba(249,115,22,0.25)' },
             { label: 'Words', val: data.word_count?.toLocaleString() ?? '—', color: '#a0a0a0', bg: '#161616', border: '#2a2a2a' },
             { label: 'Language', val: tech.lang_attribute || '—', color: '#a0a0a0', bg: '#161616', border: '#2a2a2a' },
             { label: 'H1 tags', val: tech.h1_count ?? '—', color: tech.h1_count === 1 ? '#22c55e' : '#f97316', bg: '#161616', border: '#2a2a2a' },
@@ -359,7 +362,7 @@ export default function ResultsReport({ data }) {
             <CheckItem label="Structured data / Schema" value={tech.has_schema ? 'Detected' : 'Not found'} pass={!!tech.has_schema} importance="Nice to have" />
             <CheckItem label="Mobile viewport" value={tech.viewport_content || (tech.mobile_viewport ? 'Set' : 'Missing')} pass={!!tech.mobile_viewport} importance="Very important" />
             <CheckItem label="H1 headings" value={`${tech.h1_count ?? 0} found`} pass={tech.h1_count === 1} importance="Very important" />
-            <CheckItem label="Keyword density" value={data.keyword_density != null ? `${data.keyword_density}%` : '—'} pass={data.keyword_density > 0 && data.keyword_density < 5} warn={data.keyword_density >= 5} importance="Important" />
+            <CheckItem label="Keyword density" value={data.keyword_density != null ? `${data.keyword_density}%` : '—'} pass={data.keyword_density >= 0.5 && data.keyword_density <= 3} warn={data.keyword_density > 0} importance="Important" />
           </>
         } />
 

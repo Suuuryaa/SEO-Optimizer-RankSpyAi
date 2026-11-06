@@ -57,6 +57,15 @@ def _get_domain(url):
         return ""
 
 
+def _same_site(domain, primary_domain):
+    """True for the primary domain itself and any of its subdomains (discuss.python.org)."""
+    if not domain or not primary_domain:
+        return False
+    return (domain == primary_domain
+            or domain.endswith("." + primary_domain)
+            or primary_domain.endswith("." + domain))
+
+
 def classify_competitor(url, title="", primary_domain=""):
     """
     Classify a SERP result. Returns one of:
@@ -67,8 +76,14 @@ def classify_competitor(url, title="", primary_domain=""):
     title_lower = title.lower() if title else ""
 
     # Primary venue — matched dynamically against the user's URL
-    if primary_domain and _get_domain(url) == primary_domain:
+    if primary_domain and _same_site(_get_domain(url), primary_domain):
         return "Primary Venue"
+
+    # Search-engine redirect / tracking links (google.com/goto?url=..., /url?q=...)
+    host = _get_domain(url)
+    if (host.startswith("google.") or ".google." in host or host in ("bing.com", "duckduckgo.com")
+            or "/goto?" in url_lower or "/url?" in url_lower):
+        return "Directory"
 
     # ========== NON-BUSINESS FILTERS (Strict) ==========
     
@@ -109,6 +124,8 @@ def classify_competitor(url, title="", primary_domain=""):
     if any(x in url_lower for x in [
         "medium.com", "wordpress.com", "blogger.com", "tumblr.com",
         "/blog/", "/news/", "/article/", "/press-release/", "/partner",
+        "/glossary", "/ref/", "/articles/", "/posts/", "/guides/", "/reviews/",
+        "alternative", "-vs-", "/compare",
         "nzherald", "stuff.co.nz", "techcrunch.com", "forbes.com",
         "businessinsider.com", "wsj.com", "ft.com", "economist.com",
     ]):
@@ -183,14 +200,18 @@ def build_full_serp_table(results, primary_url=""):
 
 
 def filter_direct_competitors(results, primary_url=""):
-    """Filter to show only direct competitors (real businesses), one entry per domain"""
+    """Direct competitors only (real businesses), one entry per domain.
+
+    The primary site and its subdomains are excluded — /competitors analyses the
+    primary separately, so keeping it here listed the user's own site as a rival.
+    """
     primary_domain = _get_domain(primary_url) if primary_url else ""
     filtered = []
     seen_domains = set()
     direct_rank = 1
     for i, item in enumerate(results, start=1):
         comp_type = classify_competitor(item["link"], item.get("title", ""), primary_domain)
-        if comp_type in ["Direct Competitor", "Primary Venue"]:
+        if comp_type == "Direct Competitor":
             domain = _get_domain(item.get("link", ""))
             if domain in seen_domains:
                 continue
@@ -339,106 +360,17 @@ OUTPUT RULES:
 
 [{{"name":"BrandName","domain":"example.com","website":"https://example.com"}}]"""
 
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 8192}
-    }
+    from ai.gemini import generate_text, GeminiError
+    try:
+        text = generate_text(gemini_api_key, prompt, temperature=0.1,
+                             max_output_tokens=8192, timeout=30)
+    except GeminiError as e:
+        # serp_utils.progressive_competitor_search catches RuntimeError and
+        # falls back to plain SERP search — keep the old error prefixes.
+        prefix = {"invalid_key": "INVALID_API_KEY", "quota": "QUOTA_429", "billing": "BILLING_402"}.get(e.kind, "ALL_FAILED")
+        raise RuntimeError(f"{prefix}||{e}") from e
 
-    # Discover available models for this API key — also validates the key early
-    _gemini_headers = {
-        "x-goog-api-key": gemini_api_key,
-        "Content-Type": "application/json",
-    }
-    available_models = []
-    for api_ver in ["v1beta", "v1"]:
-        try:
-            list_resp = _req.get(
-                f"https://generativelanguage.googleapis.com/{api_ver}/models",
-                headers=_gemini_headers,
-                timeout=15
-            )
-            if list_resp.status_code == 401:
-                raise RuntimeError(
-                    "INVALID_API_KEY_401: Gemini API key is invalid or not authorised. "
-                    "Check that GEMINI_API_KEY is correctly set in Streamlit Cloud secrets."
-                )
-            if list_resp.status_code == 403:
-                raise RuntimeError(
-                    "FORBIDDEN_403: Generative Language API not enabled for this key/project. "
-                    "Enable it at console.cloud.google.com → APIs & Services."
-                )
-            if list_resp.status_code == 200:
-                all_models = list_resp.json().get("models", [])
-                available_models = [
-                    m["name"].replace("models/", "")
-                    for m in all_models
-                    if "generateContent" in m.get("supportedGenerationMethods", [])
-                    and "gemini" in m.get("name", "").lower()
-                ]
-                if available_models:
-                    available_models.sort(key=lambda x: (
-                        0 if "flash" in x else 1,
-                        0 if "2.0" in x else (1 if "1.5" in x else 2)
-                    ))
-                    break
-        except RuntimeError:
-            raise
-        except Exception:
-            pass
-
-    # Fallback list if discovery network-fails (gemini-pro bare alias excluded — needs OAuth on v1)
-    if not available_models:
-        available_models = [
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b",
-            "gemini-1.5-pro",
-            "gemini-1.0-pro",
-        ]
-
-    last_error = None
-    quota_errors = []
-
-    for model in available_models[:8]:
-        for api_ver in ["v1beta", "v1"]:
-            endpoint = (
-                f"https://generativelanguage.googleapis.com/{api_ver}"
-                f"/models/{model}:generateContent"
-            )
-            try:
-                resp = _req.post(endpoint, headers=_gemini_headers, json=payload, timeout=30)
-
-                if resp.status_code == 429:
-                    # Don't give up — record the error and try the next model
-                    quota_errors.append(f"{model}/{api_ver}: {resp.text[:200]}")
-                    last_error = f"QUOTA_429||{resp.text[:400]}"
-                    break  # break inner (api_ver) loop, try next model
-
-                if resp.status_code in (401, 403):
-                    # Key-level failure — no point trying more models
-                    raise RuntimeError(
-                        f"INVALID_API_KEY_{resp.status_code}||"
-                        f"Gemini key rejected ({resp.status_code}): {resp.text[:200]}"
-                    )
-
-                if resp.status_code == 200:
-                    data = resp.json()
-                    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    competitors = _extract_json_list(text)
-                    if competitors is not None:
-                        return competitors
-                    last_error = f"{model}/{api_ver} → could not extract JSON list. Raw: {text[:300]}"
-                    continue
-
-                last_error = f"{model}/{api_ver} → HTTP {resp.status_code}: {resp.text[:200]}"
-
-            except RuntimeError:
-                raise
-            except Exception as e:
-                last_error = f"{model}/{api_ver} → {e}"
-
-    # All models exhausted — raise with the most useful error
-    if last_error and last_error.startswith("QUOTA_429||"):
-        raise RuntimeError(last_error)
-    raise RuntimeError(f"ALL_FAILED||Models tried: {available_models[:5]}. Last error: {last_error}")
+    competitors = _extract_json_list(text)
+    if competitors is None:
+        raise RuntimeError(f"ALL_FAILED||Could not extract JSON list. Raw: {text[:300]}")
+    return competitors

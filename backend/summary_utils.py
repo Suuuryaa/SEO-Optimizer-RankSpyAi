@@ -137,46 +137,15 @@ Specific technical problems found (HTTPS, schema, alt text, internal links) with
 
 Be specific, use the actual data provided, and write for a non-technical business owner."""
 
+    from ai.gemini import generate_text, GeminiError
     try:
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 8192}
-        }
-
-        _gemini_headers = {
-            "x-goog-api-key": gemini_api_key,
-            "Content-Type": "application/json",
-        }
-        models_to_try = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash",
-                         "gemini-1.5-flash-8b", "gemini-1.5-pro", "gemini-1.0-pro"]
-        for api_ver in ["v1beta", "v1"]:
-            try:
-                r = _req.get(
-                    f"https://generativelanguage.googleapis.com/{api_ver}/models",
-                    headers=_gemini_headers,
-                    timeout=10
-                )
-                if r.status_code == 200:
-                    discovered = [
-                        m["name"].replace("models/", "")
-                        for m in r.json().get("models", [])
-                        if "generateContent" in m.get("supportedGenerationMethods", [])
-                        and "gemini" in m.get("name", "").lower()
-                    ]
-                    if discovered:
-                        models_to_try = sorted(discovered, key=lambda x: (0 if "flash" in x else 1))
-                        break
-            except Exception:
-                pass
-
-        for model in models_to_try[:4]:
-            for api_ver in ["v1beta", "v1"]:
-                ep = (f"https://generativelanguage.googleapis.com/{api_ver}"
-                      f"/models/{model}:generateContent")
-                resp = _req.post(ep, headers=_gemini_headers, json=payload, timeout=60)
-                if resp.status_code == 200:
-                    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-
-        return "AI summary unavailable — no working Gemini model found for this API key."
-    except Exception as e:
-        return f"AI summary error: {e}"
+        return generate_text(gemini_api_key, prompt, temperature=0.4,
+                             max_output_tokens=8192, timeout=60)
+    except GeminiError as e:
+        if e.kind == "invalid_key":
+            return "AI summary unavailable — the Gemini API key was rejected."
+        if e.kind == "billing":
+            return "AI summary unavailable — the Gemini account is out of credits."
+        if e.kind == "quota":
+            return "AI summary unavailable — Gemini quota reached, try again later."
+        return "AI summary unavailable — Gemini did not return a response."

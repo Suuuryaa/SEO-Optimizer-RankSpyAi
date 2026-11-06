@@ -8,7 +8,9 @@
   },
   "assets": {
     "not_found_handling": "single-page-application",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Without this, static files (including "/") skip worker.js and its security headers
+    "run_worker_first": true
   },
   "routes": [
     { "pattern": "rankspyseo.xyz", "custom_domain": true }

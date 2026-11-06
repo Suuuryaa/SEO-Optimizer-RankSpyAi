@@ -165,3 +165,25 @@ def get_ip_usage(ip: str) -> dict:
     raw = _redis(f"/get/{key}")
     used = int(raw) if raw else 0
     return {"used": used, "remaining": max(0, DAILY_FREE_LIMIT - used)}
+
+
+def check_ip_quota(ip: str, bucket: str, limit: int) -> bool:
+    """
+    Per-IP daily counter for a named bucket (e.g. "helpers", "track").
+    Used for endpoints that do real work (scraping, SERP calls) but don't draw
+    from the global pool. Fails open when Redis is unavailable.
+    """
+    if not UPSTASH_REDIS_REST_URL or not UPSTASH_REDIS_REST_TOKEN:
+        return True
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    key = f"quota:{bucket}:{ip}:{today}"
+    try:
+        r = requests.get(f"{UPSTASH_REDIS_REST_URL}/incr/{key}", headers=_headers(), timeout=_TIMEOUT)
+        count = int(r.json().get("result", 1))
+        if count == 1:
+            requests.get(f"{UPSTASH_REDIS_REST_URL}/expire/{key}/{_RATE_TTL}",
+                         headers=_headers(), timeout=_TIMEOUT)
+        return count <= limit
+    except Exception as exc:
+        logger.warning(f"check_ip_quota({bucket}) failed: {exc} — allowing request")
+        return True

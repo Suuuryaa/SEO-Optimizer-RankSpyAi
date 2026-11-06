@@ -61,6 +61,60 @@ function ErrorBanner({ message }) {
   )
 }
 
+// Minimal markdown renderer for the Gemini report: ## headings, - bullets, **bold**.
+// React escapes all text, so model output can never inject HTML.
+function renderInline(text) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={i} style={{ color: '#e0e0e0' }}>{part.slice(2, -2)}</strong>
+      : part
+  )
+}
+
+function AiReport({ text }) {
+  if (!text) return null
+  const unavailable = /^AI summary (unavailable|error)/i.test(text)
+  return (
+    <div
+      style={{
+        background: 'rgba(230,57,70,0.05)',
+        border: '1px solid rgba(230,57,70,0.2)',
+        borderRadius: '12px',
+        padding: '20px',
+        marginTop: '24px',
+      }}
+    >
+      <div style={{ fontSize: '11px', color: '#e63946', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '12px' }}>
+        AI STRATEGY REPORT
+      </div>
+      {unavailable ? (
+        <p style={{ fontSize: '13px', color: '#a0a0a0' }}>{text}</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {text.split('\n').map((raw, i) => {
+            const line = raw.trim()
+            if (!line) return null
+            const h = line.match(/^#{1,4}\s+(.*)/)
+            if (h) return (
+              <div key={i} style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginTop: i ? '12px' : 0 }}>
+                {renderInline(h[1])}
+              </div>
+            )
+            const b = line.match(/^(?:[-*•]|\d+[.)])\s+(.*)/)
+            if (b) return (
+              <div key={i} style={{ fontSize: '13px', color: '#a0a0a0', lineHeight: '1.6', paddingLeft: '14px', position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 0, color: '#e63946' }}>•</span>
+                {renderInline(b[1])}
+              </div>
+            )
+            return <p key={i} style={{ fontSize: '13px', color: '#a0a0a0', lineHeight: '1.6' }}>{renderInline(line)}</p>
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ExecutiveSummary({ summary, url }) {
   if (!summary) return null
   return (
@@ -74,7 +128,7 @@ function ExecutiveSummary({ summary, url }) {
       }}
     >
       <div style={{ fontSize: '11px', color: '#e63946', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '12px' }}>
-        AI EXECUTIVE SUMMARY
+        SUMMARY
       </div>
       {typeof summary === 'string' ? (
         <p style={{ fontSize: '13px', color: '#a0a0a0', lineHeight: '1.6' }}>{summary}</p>
@@ -104,7 +158,7 @@ export default function App() {
   const [analyzeParams, setAnalyzeParams] = useState(null)
   const [showContact, setShowContact] = useState(false)
 
-  async function handleAnalyze({ url, keyword, crawlMode, geo }) {
+  async function handleAnalyze({ url, keyword, crawlMode, geo, userApiKeys }) {
     setLoading(true)
     setError(null)
     setSeoData(null)
@@ -112,7 +166,7 @@ export default function App() {
     setMode('seo')
     setAnalyzeParams({ url, keyword, crawlMode, geo })
     try {
-      const result = await analyzeUrl({ url, keyword, geo, crawlMode })
+      const result = await analyzeUrl({ url, keyword, geo, crawlMode, userApiKeys })
       setSeoData(result)
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || 'Failed to analyze URL. Make sure the backend is running.')
@@ -122,14 +176,14 @@ export default function App() {
     }
   }
 
-  async function handleCompetitors({ url, keyword }) {
+  async function handleCompetitors({ url, keyword, userApiKeys }) {
     setLoading(true)
     setError(null)
     setSeoData(null)
     setCompData(null)
     setMode('competitors')
     try {
-      const result = await findCompetitors({ url, keyword })
+      const result = await findCompetitors({ url, keyword, userApiKeys })
       setCompData(result)
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || 'Failed to fetch competitors. Make sure the backend is running.')
@@ -154,7 +208,7 @@ export default function App() {
         letterSpacing: '0.02em',
       }}>
         <span style={{ fontWeight: 700, color: '#eab308' }}>🚧 Work in progress</span>
-        {' '}— Everything on the site works. Feel free to try the tool! This is a limited demo (10 total checks until reset).
+        {' '}— Everything on the site works. Feel free to try the tool! Free checks come from a shared daily pool — add your own API keys for unlimited use.
       </div>
 
       <div id="section-top" />
@@ -210,7 +264,7 @@ export default function App() {
               )}
             </div>
 
-            <ExecutiveSummary summary={seoData.executive_summary} url={seoData.url} />
+            <ExecutiveSummary summary={seoData.summary} url={seoData.url} />
             <ResultsReport data={seoData} />
           </div>
         )}
@@ -236,6 +290,7 @@ export default function App() {
                 </div>
               </div>
             </div>
+            <AiReport text={compData?.ai_summary} />
             {compData?.primary?.content_brief && (
               <ContentBriefPanel brief={compData.primary.content_brief} />
             )}

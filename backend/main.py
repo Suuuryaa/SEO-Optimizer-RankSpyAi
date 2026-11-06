@@ -19,9 +19,16 @@ import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
-_PARENT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# backend/ must win over the old Streamlit-era duplicates in the project root
+# (seo_utils, competitor_utils, summary_utils, ...). Inserting the root at
+# position 0 used to shadow every hardened backend module.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_PARENT = os.path.abspath(os.path.join(_HERE, ".."))
+if _HERE in sys.path:
+    sys.path.remove(_HERE)
+sys.path.insert(0, _HERE)
 if _PARENT not in sys.path:
-    sys.path.insert(0, _PARENT)
+    sys.path.append(_PARENT)
 
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -29,7 +36,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from typing import Optional
 
@@ -38,9 +45,19 @@ from log_sanitizer import configure_logging
 configure_logging(level=os.getenv("LOG_LEVEL", "INFO"))
 from cache import (
     get_cached, set_cached,
-    check_ip_rate_limit, get_ip_usage,
+    check_ip_rate_limit, get_ip_usage, check_ip_quota,
     DAILY_FREE_LIMIT,
 )
+
+# Per-IP daily caps for endpoints outside the global pool. Each helper call
+# scrapes the page again (ScraperAPI credits); /track also spends Serper.
+HELPER_DAILY_LIMIT = int(os.getenv("HELPER_DAILY_LIMIT", "60"))
+TRACK_DAILY_LIMIT  = int(os.getenv("TRACK_DAILY_LIMIT", "10"))
+
+
+def _quota_gate(request: Request, bucket: str, limit: int) -> None:
+    if not check_ip_quota(_client_ip(request), bucket, limit):
+        raise HTTPException(status_code=429, detail="Daily limit reached for this feature. Try again tomorrow.")
 from rate_limiter import check_and_consume, get_global_uses, get_remaining
 from models import (
     AnalyzeRequest, AnalyzeResponse,
@@ -52,6 +69,7 @@ from models import (
 )
 
 from seo_utils import (
+    FetchError,
     get_page_soup, get_title, get_meta_description, get_h1_tags,
     get_text_content, count_words, count_keyword, keyword_density,
     get_links, get_images_missing_alt, keyword_in_title, keyword_in_meta,
@@ -161,31 +179,88 @@ def _is_cloudflare_ip(ip: str) -> bool:
     except ValueError:
         return False
 
+# Railway's edge proxy connects from the shared 100.64.0.0/10 range, so the
+# socket address is the proxy, not the visitor. Only behind that proxy do we
+# trust the forwarding headers it sets.
+_RAILWAY_PROXY_NET = _ipaddr.ip_network("100.64.0.0/10")
+
+
 def _client_ip(request: Request) -> str:
-    """Get real client IP. Only trust CF-Connecting-IP when request genuinely came from Cloudflare."""
+    """Real client IP: Cloudflare header from Cloudflare, Railway forwarding headers from Railway's proxy."""
     real_ip = (request.client.host or "unknown") if request.client else "unknown"
     if _is_cloudflare_ip(real_ip):
         return request.headers.get("CF-Connecting-IP") or real_ip
+    try:
+        behind_railway = _ipaddr.ip_address(real_ip) in _RAILWAY_PROXY_NET
+    except ValueError:
+        behind_railway = False
+    if behind_railway:
+        fwd = (request.headers.get("X-Real-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0]).strip()
+        try:
+            _ipaddr.ip_address(fwd)
+            return fwd
+        except ValueError:
+            pass
     return real_ip
 
 
+def _key_works(kind: str, key: str) -> bool:
+    """One cheap live call proves a user key is real; the verdict is cached in Redis.
+
+    Format checks alone let anyone skip the free pool with made-up keys.
+    """
+    import hashlib
+    import requests as _rq
+    from cache import _redis, _redis_set_ex
+    fp = hashlib.sha256(f"{kind}:{key}".encode()).hexdigest()[:24]
+    cached = _redis(f"/get/keyok:{fp}")
+    if cached in ("1", "0"):
+        return cached == "1"
+    try:
+        if kind == "serper":
+            r = _rq.get("https://google.serper.dev/account", headers={"X-API-KEY": key}, timeout=8)
+        else:
+            r = _rq.get("https://generativelanguage.googleapis.com/v1beta/models",
+                        params={"pageSize": 1}, headers={"x-goog-api-key": key}, timeout=8)
+        ok = r.status_code == 200
+    except Exception as exc:
+        logger.warning(f"key check ({kind}) failed: {exc}")
+        return False
+    _redis_set_ex(f"keyok:{fp}", "1" if ok else "0", 3600 if ok else 600)
+    return ok
+
+
 def _has_own_keys(user_api_keys) -> bool:
-    """Only bypass pool if keys match known API key formats."""
+    """Bypass the pool only for keys that match the format AND answer a real API call."""
     if not user_api_keys:
         return False
     import re as _re
     sk = user_api_keys.serper_key or ""
     gk = user_api_keys.gemini_key or ""
-    serper_valid = bool(_re.match(r'^[a-f0-9]{40}$', sk))
-    gemini_valid = bool(_re.match(r'^AIzaSy[A-Za-z0-9_-]{33}$', gk))
-    return serper_valid and gemini_valid
+    if not (_re.match(r'^[a-f0-9]{40}$', sk) and _re.match(r'^AIzaSy[A-Za-z0-9_-]{33}$', gk)):
+        return False
+    return _key_works("serper", sk) and _key_works("gemini", gk)
 
 
-def _gate(user_api_keys) -> dict:
-    result = check_and_consume(user_has_own_keys=_has_own_keys(user_api_keys))
+# Own-key users still use the server's scraping proxies, so they get a daily cap too.
+OWN_KEY_DAILY_LIMIT = int(os.getenv("OWN_KEY_DAILY_LIMIT", "100"))
+
+
+def _gate(user_api_keys, request: Request) -> dict:
+    own = _has_own_keys(user_api_keys)
+    if own and not check_ip_quota(_client_ip(request), "ownkeys", OWN_KEY_DAILY_LIMIT):
+        raise HTTPException(status_code=429, detail="Daily limit reached for scans with your own keys. Try again tomorrow.")
+    result = check_and_consume(user_has_own_keys=own)
     if not result["allowed"]:
         raise HTTPException(status_code=429, detail=result["message"])
     return result
+
+
+def _analysis_http_error(exc: Exception) -> HTTPException:
+    """Tell the user what happened when the page itself was the problem."""
+    if isinstance(exc, FetchError):
+        return HTTPException(status_code=422, detail=str(exc))
+    return HTTPException(status_code=502, detail="Analysis failed. Please try again.")
 
 
 async def _run(fn, *args):
@@ -225,6 +300,12 @@ def _full_seo_analysis(url: str, keyword: str, keys: dict) -> dict:
     schema   = has_schema_markup(soup)
     cq       = analyze_content_quality(text)
 
+    # A page with no title and almost no text is a block page or an unrendered
+    # shell, not the site — report that instead of scoring it (amazon.com scored 20).
+    if title in ("", "No title found") and wc < 30:
+        raise FetchError("blocked", "We couldn't read any content on this page. The site may block "
+                                    "scanners, or the page may need JS rendering mode.")
+
     score, recs = calculate_seo_score(
         title, meta, h1, kc, wc, len(missing),
         tkw, mkw, hkw, tlen, mlen,
@@ -236,6 +317,13 @@ def _full_seo_analysis(url: str, keyword: str, keys: dict) -> dict:
     )
 
     summary_raw = get_executive_summary(score, kc, len(missing), wc)
+    # Same band words as the score card, and the top issue = the top-priority task
+    summary_raw["Overall Status"] = f"{get_score_band(score)} SEO performance"
+    _rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+    _top = sorted(recs, key=lambda r: _rank.get(''.join(c for c in str(r.get("priority", "")).upper() if c.isalpha()), 9))
+    if _top:
+        summary_raw["Top Issue"] = _top[0].get("issue", summary_raw["Top Issue"])
+        summary_raw["Priority Action"] = _top[0].get("fix", summary_raw["Priority Action"])
 
     return {
         "url": url, "keyword": _sanitize_input(keyword),
@@ -261,18 +349,26 @@ def _full_seo_analysis(url: str, keyword: str, keys: dict) -> dict:
 
 # ── New request models ─────────────────────────────────────────────────────────
 
-class SuggestMetaRequest(BaseModel):
+class _UrlModel(BaseModel):
+    @field_validator("url", check_fields=False)
+    @classmethod
+    def _check_url(cls, v: str) -> str:
+        from models import _validate_url
+        return _validate_url(v)
+
+
+class SuggestMetaRequest(_UrlModel):
     url:     str
-    keyword: str = ""
+    keyword: str = Field(default="", max_length=200)
 
     class Config:
         # allow extra so frontend can pass crawlMode etc without breaking
         extra = "ignore"
 
 
-class SchemaRequest(BaseModel):
+class SchemaRequest(_UrlModel):
     url:     str
-    keyword: str = ""
+    keyword: str = Field(default="", max_length=200)
 
     class Config:
         extra = "ignore"
@@ -324,7 +420,7 @@ def rate_status(request: Request):
 
 @app.post("/analyze")
 async def analyze(req: AnalyzeRequest, request: Request):
-    gate = _gate(req.user_api_keys)
+    gate = _gate(req.user_api_keys, request)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     # ── Check result cache first ──────────────────────────────────────────────
@@ -341,7 +437,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
         result = await _run(_full_seo_analysis, req.url, req.keyword, keys)
     except Exception as exc:
         logger.error(f"/analyze error for {req.url}: {exc}")
-        raise HTTPException(status_code=502, detail="Analysis failed. Please try again.")
+        raise _analysis_http_error(exc)
 
     # ── Deep Playwright crawl (JS mode) ───────────────────────────────────────
     if js_mode:
@@ -425,7 +521,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
 
 @app.post("/competitors")
 async def competitors(req: CompetitorsRequest, request: Request):
-    gate = _gate(req.user_api_keys)
+    gate = _gate(req.user_api_keys, request)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     if not keys["serper"]:
@@ -436,7 +532,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
         primary_raw = await _run(_full_seo_analysis, req.url, req.keyword, keys)
     except Exception as exc:
         logger.error(f"/competitors primary error: {exc}")
-        raise HTTPException(status_code=502, detail="Analysis failed. Please try again.")
+        raise _analysis_http_error(exc)
 
     primary_raw.pop("_soup", None)
     primary_text = primary_raw.pop("_text", "")
@@ -458,7 +554,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
         if not comp_url:
             return None
         try:
-            row = await _run(analyze_venue, comp_url, req.keyword)
+            row = await _run(analyze_venue, comp_url, req.keyword, True)
             row["Role"]      = "Direct Competitor"
             row["SERP Rank"] = comp.get("SERP Rank", comp.get("Direct Rank", "N/A"))
             return row
@@ -478,12 +574,16 @@ async def competitors(req: CompetitorsRequest, request: Request):
     try:
         brief = await _run(
             generate_content_brief,
-            primary_raw, comp_rows, req.keyword, keys["gemini"] or ""
+            {**primary_raw, "_text": primary_text}, comp_rows, req.keyword, keys["gemini"] or ""
         )
         primary_raw["content_brief"] = brief
     except Exception as exc:
         logger.warning(f"content_brief error: {exc}")
         primary_raw["content_brief"] = None
+
+    # Page text was only needed for the content brief — never send it to clients
+    for r in comp_rows:
+        r.pop("_text", None)
 
     # AI summary
     ai_summary = None
@@ -515,7 +615,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
         primary=primary_raw, competitors=comp_rows,
         search_log=search_log, location_msg=location_msg,
         ai_summary=ai_summary,
-        pool_uses=gate["uses"], pool_remaining=gate["remaining"],
+        pool_uses=int(gate["uses"]), pool_remaining=int(gate["remaining"]),
     )
 
 
@@ -523,12 +623,13 @@ async def competitors(req: CompetitorsRequest, request: Request):
 async def suggest_meta(req: SuggestMetaRequest, request: Request):
     """
     Generate AI-powered meta title + description suggestions.
-    Does NOT consume a rate-limit check — it's a lightweight helper.
+    Does not draw from the global pool, but is capped per IP per day.
     """
+    _quota_gate(request, "helpers", HELPER_DAILY_LIMIT)
     try:
         result = await _run(_full_seo_analysis, req.url, req.keyword, {})
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Analysis failed. Please try again.")
+        raise _analysis_http_error(exc)
 
     soup = result.pop("_soup")
     text = result.pop("_text")
@@ -560,10 +661,11 @@ async def suggest_meta(req: SuggestMetaRequest, request: Request):
 @app.post("/schema")
 async def schema_endpoint(req: SchemaRequest, request: Request):
     """Generate JSON-LD schema markup for the given URL."""
+    _quota_gate(request, "helpers", HELPER_DAILY_LIMIT)
     try:
         result = await _run(_full_seo_analysis, req.url, req.keyword, {})
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Analysis failed. Please try again.")
+        raise _analysis_http_error(exc)
 
     soup = result.pop("_soup")
     text = result.pop("_text")
@@ -588,10 +690,11 @@ async def schema_endpoint(req: SchemaRequest, request: Request):
 @app.post("/local-seo")
 async def local_seo_endpoint(req: SuggestMetaRequest, request: Request):
     """Analyze page for local SEO signals."""
+    _quota_gate(request, "helpers", HELPER_DAILY_LIMIT)
     try:
         result = await _run(_full_seo_analysis, req.url, req.keyword, {})
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Analysis failed. Please try again.")
+        raise _analysis_http_error(exc)
 
     soup = result.pop("_soup")
     text = result.pop("_text")
@@ -606,7 +709,7 @@ async def local_seo_endpoint(req: SuggestMetaRequest, request: Request):
 
 @app.post("/compare")
 async def compare(req: CompareRequest, request: Request):
-    gate = _gate(req.user_api_keys)
+    gate = _gate(req.user_api_keys, request)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
     try:
         r1, r2 = await asyncio.gather(
@@ -631,9 +734,9 @@ async def compare(req: CompareRequest, request: Request):
 
 @app.post("/leaderboard")
 async def leaderboard(req: LeaderboardRequest, request: Request):
-    if len(req.urls) > 20:
-        raise HTTPException(status_code=400, detail="Maximum 20 URLs.")
-    gate = _gate(req.user_api_keys)
+    if len(req.urls) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 URLs.")
+    gate = _gate(req.user_api_keys, request)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     tasks = [_run(analyze_venue, url, req.keyword) for url in req.urls]
@@ -653,7 +756,7 @@ async def leaderboard(req: LeaderboardRequest, request: Request):
 
 @app.post("/pagespeed")
 async def pagespeed(req: PageSpeedRequest, request: Request):
-    gate = _gate(req.user_api_keys)
+    gate = _gate(req.user_api_keys, request)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
     if not keys["pagespeed"]:
         raise HTTPException(status_code=400, detail="PAGESPEED_API_KEY required.")
@@ -665,14 +768,15 @@ async def pagespeed(req: PageSpeedRequest, request: Request):
                              pool_uses=gate["uses"], pool_remaining=gate["remaining"])
 
 
-class TrackRequest(BaseModel):
+class TrackRequest(_UrlModel):
     url: str
-    keyword: str
+    keyword: str = Field(min_length=1, max_length=200)
 
 
 @app.post("/track")
 async def track_keyword(req: TrackRequest, request: Request):
     """Save a URL+keyword for rank tracking, then immediately check its SERP position."""
+    _quota_gate(request, "track", TRACK_DAILY_LIMIT)
     supabase_url = os.environ.get("SUPABASE_URL", "")
     supabase_key = os.environ.get("SUPABASE_KEY", "")
     serper_key   = os.environ.get("SERPER_API_KEY", "")

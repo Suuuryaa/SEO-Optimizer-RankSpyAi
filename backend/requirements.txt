@@ -10,7 +10,8 @@ beautifulsoup4>=4.12.0
 lxml>=6.1.0
 tenacity>=8.2.3
 textstat>=0.7.3
-scrapling>=0.4.8
+# [fetchers] pulls in patchright — without it every Scrapling fetcher fails to import
+scrapling[fetchers]>=0.5.1
 curl-cffi>=0.15.0
 browserforge>=1.2.4
 apify-fingerprint-datapoints>=0.13.0
