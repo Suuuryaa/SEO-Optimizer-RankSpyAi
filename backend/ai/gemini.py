@@ -45,6 +45,11 @@ _DISCOVERY_TTL = 6 * 3600
 _lock = threading.Lock()
 _discovered: dict[str, tuple[float, list[str]]] = {}   # key fingerprint -> (time, models)
 _last_good:  dict[str, str] = {}                       # key fingerprint -> model
+_bad:        dict[str, dict[str, float]] = {}          # key fingerprint -> {model: skip-until}
+_BAD_TTL = 6 * 3600
+# A model not yet proven for this key gets a shorter leash: on the free tier the
+# newest models can hang for 90 s, which would outlive Railway's 60 s request limit.
+_PROBE_TIMEOUT = 20
 
 
 class GeminiError(RuntimeError):
@@ -114,11 +119,17 @@ def _discover(api_key: str) -> list[str]:
 
 def _candidates(api_key: str) -> list[str]:
     override = [m.strip() for m in os.getenv("GEMINI_MODEL", "").split(",") if m.strip()]
+    now = time.time()
+    bad = {m for m, until in _bad.get(_fp(api_key), {}).items() if until > now}
     order: list[str] = []
     for m in override + [_last_good.get(_fp(api_key), "")] + _discover(api_key) + _FALLBACK_MODELS:
-        if m and m not in order:
+        if m and m not in order and m not in bad:
             order.append(m)
     return order
+
+
+def _mark_bad(api_key: str, model: str) -> None:
+    _bad.setdefault(_fp(api_key), {})[model] = time.time() + _BAD_TTL
 
 
 def _extract_text(data: dict) -> str:
@@ -150,13 +161,17 @@ def generate_text(
     errors: list[str] = []
     quota_hits = 0
 
+    fp = _fp(api_key)
     for model in _candidates(api_key)[:_MAX_ATTEMPTS]:
+        proven = _last_good.get(fp) == model
         try:
             resp = requests.post(
                 f"{_API}/models/{model}:generateContent",
-                headers=headers, json=payload, timeout=timeout,
+                headers=headers, json=payload,
+                timeout=timeout if proven else min(timeout, _PROBE_TIMEOUT),
             )
         except Exception as exc:
+            _mark_bad(api_key, model)   # hung or unreachable: skip it for 6 h
             errors.append(f"{model}: {type(exc).__name__}")
             continue
 
@@ -174,6 +189,8 @@ def generate_text(
             raise GeminiError("billing", "Gemini prepaid credits are used up (HTTP 402)")
         if resp.status_code == 429:
             quota_hits += 1
+        elif resp.status_code in (400, 404) or resp.status_code >= 500:
+            _mark_bad(api_key, model)   # retired, not offered on this tier, or broken
         errors.append(f"{model}: HTTP {resp.status_code} {resp.text[:120]}")
 
     logger.warning(f"Gemini: all models failed — {errors}")
