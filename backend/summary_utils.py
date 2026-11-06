@@ -94,12 +94,20 @@ def generate_ai_executive_summary(
         f"Images Missing ALT: {primary_data.get('Images Missing ALT', 0)}"
     )
 
+    if isinstance(primary_rank, int):
+        rank_text = f"#{primary_rank} in Google's organic results (measured)"
+    elif primary_rank is None:
+        rank_text = "not in Google's top 30 organic results (measured)"
+    else:
+        rank_text = "unknown (not measured)"
+
     insights_text = "\n".join([f"  - {_sanitize_for_prompt(i)}" for i in strategic_insights[:8]]) or "  None provided."
 
     prompt = f"""You are a senior SEO strategist writing a detailed analysis report for a business owner.
 
 PRIMARY SITE: {_sanitize_for_prompt(primary_name)}
 TARGET KEYWORD: "{_sanitize_for_prompt(keyword)}"
+GOOGLE POSITION FOR THIS KEYWORD: {rank_text}
 PRIMARY SEO DATA: {primary_detail}
 BEST COMPETITOR: {_sanitize_for_prompt(top_competitor)}
 
@@ -108,6 +116,8 @@ COMPETITOR DATA:
 
 STRATEGIC INSIGHTS:
 {insights_text}
+
+RULE: Only state a Google ranking for the primary site if GOOGLE POSITION above gives one. Never claim a position that is not listed there, and never claim a competitor's ranking.
 
 Write a COMPREHENSIVE SEO analysis report with these exact sections:
 

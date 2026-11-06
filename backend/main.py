@@ -256,6 +256,35 @@ def _gate(user_api_keys, request: Request) -> dict:
     return result
 
 
+def _google_positions(keyword: str, urls: list[str], serper_key: str):
+    """Organic Google position (top ~30) per URL's site for `keyword`.
+
+    Returns {url: position | None (not in top 30)}, or None when the search
+    could not be run, so callers can tell "not ranking" from "not measured".
+    """
+    if not serper_key or not keyword:
+        return None
+    import requests as _rq
+    from urllib.parse import urlparse
+
+    def site(u: str) -> str:
+        h = (urlparse(u if "//" in u else "https://" + u).hostname or "").lower()
+        return h[4:] if h.startswith("www.") else h
+
+    from rank_tracker import serp_organic_links
+    try:
+        links = serp_organic_links(keyword, serper_key)
+    except Exception as exc:
+        logger.warning(f"google position lookup failed: {exc}")
+        return None
+    hosts = [site(l) for l in links]
+    out = {}
+    for u in urls:
+        s = site(u)
+        out[u] = next((i for i, h in enumerate(hosts, 1) if s and (h == s or h.endswith("." + s))), None)
+    return out
+
+
 def _analysis_http_error(exc: Exception) -> HTTPException:
     """Tell the user what happened when the page itself was the problem."""
     if isinstance(exc, FetchError):
@@ -585,13 +614,23 @@ async def competitors(req: CompetitorsRequest, request: Request):
     for r in comp_rows:
         r.pop("_text", None)
 
+    # Real Google positions for the site and each competitor (one Serper search).
+    # The report used to hard-code the site as #1, so every report claimed first place.
+    positions = await _run(_google_positions, req.keyword, [req.url] + [r.get("URL", "") for r in comp_rows], keys["serper"])
+    def _pos(u):
+        return "unknown" if positions is None else positions.get(u)
+    primary_rank = _pos(req.url)
+    primary_raw["google_position"] = primary_rank
+    for r in comp_rows:
+        r["SERP Rank"] = _pos(r.get("URL", ""))
+
     # AI summary
     ai_summary = None
     if keys["gemini"] and comp_rows:
         try:
             primary_row = {
                 "Venue Name":         primary_raw.get("title", req.url),
-                "SERP Rank":          1,
+                "SERP Rank":          primary_rank,
                 "SEO Score":          primary_raw["seo_score"],
                 "Keyword Count":      primary_raw["keyword_count"],
                 "Word Count":         primary_raw["word_count"],
@@ -604,7 +643,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
             ai_summary = await _run(
                 generate_ai_executive_summary,
                 keys["gemini"], primary_row["Venue Name"], req.keyword,
-                1, primary_raw["seo_score"],
+                primary_rank, primary_raw["seo_score"],
                 best_comp.get("Venue Name", "N/A"), insights, all_rows,
             )
         except Exception as exc:

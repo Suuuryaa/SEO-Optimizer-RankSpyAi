@@ -141,16 +141,38 @@ def save_tracking(url: str, keyword: str, supabase_url: str = "", supabase_key: 
     return _sqlite_save_tracking(url, keyword)
 
 
+SERP_DEPTH_PAGES = 3   # Serper ignores num=100 now and returns ~10 per page
+
+
+def serp_organic_links(keyword: str, serper_key: str, pages: int = SERP_DEPTH_PAGES) -> list[str]:
+    """Organic result links in Google order, top ~10 x pages (1 Serper credit per page).
+
+    Google redirect entries (google.com/...) that Serper mixes into "organic" are
+    dropped so they don't take up positions.
+    """
+    links: list[str] = []
+    for page in range(1, pages + 1):
+        resp = requests.post(
+            "https://google.serper.dev/search",
+            json={"q": keyword, "page": page},
+            headers={"X-API-KEY": serper_key, "Content-Type": "application/json"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        organic = resp.json().get("organic", [])
+        if not organic:
+            break
+        for r in organic:
+            link = r.get("link", "")
+            host = (urlparse(link).hostname or "").lower()
+            if host.startswith("google.") or ".google." in host:
+                continue
+            links.append(link)
+    return links
+
+
 def check_rank(url: str, keyword: str, serper_key: str) -> dict:
-    endpoint = "https://google.serper.dev/search"
-    resp = requests.post(
-        endpoint,
-        json={"q": keyword, "num": 100},
-        headers={"X-API-KEY": serper_key, "Content-Type": "application/json"},
-        timeout=15,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+    data = {"organic": [{"link": l} for l in serp_organic_links(keyword, serper_key)]}
 
     def _norm(u: str) -> str:
         p = urlparse(u.lower())
