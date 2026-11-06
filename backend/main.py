@@ -68,8 +68,9 @@ from models import (
     HealthResponse, SeoSummary,
 )
 
+from bs4 import BeautifulSoup
 from seo_utils import (
-    FetchError,
+    FetchError, render_page_html, THIN_PAGE_WORDS,
     get_page_soup, get_title, get_meta_description, get_h1_tags,
     get_text_content, count_words, count_keyword, keyword_density,
     get_links, get_images_missing_alt, keyword_in_title, keyword_in_meta,
@@ -311,6 +312,17 @@ def _full_seo_analysis(url: str, keyword: str, keys: dict) -> dict:
     """Full synchronous SEO pipeline — runs in executor."""
     soup, _ = get_page_soup(url)
 
+    # Thin plain HTML (a JavaScript app shell): analyse the rendered page instead
+    rendered_js = False
+    raw_words = count_words(get_text_content(BeautifulSoup(str(soup), "lxml")))
+    if raw_words < THIN_PAGE_WORDS:
+        html = render_page_html(url)
+        if html:
+            rendered = BeautifulSoup(html, "lxml")
+            if count_words(get_text_content(BeautifulSoup(html, "lxml"))) > raw_words:
+                soup, rendered_js = rendered, True
+                logger.info(f"rendered with JS: {url} ({raw_words} words in plain HTML)")
+
     title    = get_title(soup)
     meta     = get_meta_description(soup)
     h1       = get_h1_tags(soup)
@@ -365,6 +377,7 @@ def _full_seo_analysis(url: str, keyword: str, keys: dict) -> dict:
         "seo_score": score, "score_band": get_score_band(score),
         "recommendations": recs, "technical_seo": tech,
         "content_quality": cq,
+        "rendered_js": rendered_js,
         "summary": {
             "overall_status":  summary_raw["Overall Status"],
             "top_issue":       summary_raw["Top Issue"],

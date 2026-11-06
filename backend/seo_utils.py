@@ -367,6 +367,73 @@ def get_page_soup(url):
     return soup, html
 
 
+# ── JS rendering for thin pages ──────────────────────────────────────────────
+# Google runs JavaScript before indexing. When the plain HTML has almost no text
+# (Airbnb served 3 words), render the page in headless Chromium and analyse the
+# rendered DOM instead. One render at a time: Chromium needs 200-300 MB and the
+# Railway free plan allows 0.5 GB per service.
+import threading as _threading
+
+THIN_PAGE_WORDS = 150
+_RENDER_SLOTS = _threading.Semaphore(1)
+_RENDER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+
+def render_page_html(url: str, timeout_ms: int = 15000):
+    """Rendered HTML of `url`, or None if rendering is unavailable, busy, blocked or private."""
+    if not _is_public_url(url):
+        return None
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return None
+    if not _RENDER_SLOTS.acquire(timeout=20):
+        logger.info(f"render skipped (busy): {url}")
+        return None
+    host_ok: dict = {}
+
+    def _allowed(u: str) -> bool:
+        from urllib.parse import urlparse
+        h = urlparse(u).hostname or ""
+        if h not in host_ok:
+            host_ok[h] = _is_public_url(u)
+        return host_ok[h]
+
+    def _route(route):
+        req = route.request
+        if req.resource_type in ("image", "media", "font"):
+            return route.abort()          # not needed for text; <img> tags stay in the DOM
+        if req.url.startswith(("http://", "https://")) and not _allowed(req.url):
+            return route.abort()          # SSRF: nothing private, at any hop
+        return route.continue_()
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            try:
+                page = browser.new_context(user_agent=_RENDER_UA, viewport={"width": 1280, "height": 900}).new_page()
+                page.route("**/*", _route)
+                page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                try:
+                    page.wait_for_load_state("networkidle", timeout=5000)
+                except Exception:
+                    pass
+                if not _allowed(page.url):
+                    return None
+                html = page.content()
+            finally:
+                browser.close()
+    except Exception as exc:
+        logger.info(f"render failed for {url}: {exc}")
+        return None
+    finally:
+        _RENDER_SLOTS.release()
+    if not html or _looks_blocked(html):
+        return None
+    return html
+
+
 def _safe_text(value: str, max_len: int = 500) -> str:
     """Strip HTML tags and limit length.
 
@@ -461,13 +528,22 @@ def get_links(soup, base_url):
 
 
 def get_images_missing_alt(soup):
-    """Find all images without alt attributes."""
+    """Images with NO alt attribute.
+
+    alt="" is correct HTML for decorative images (Lighthouse and WCAG accept it),
+    so it is not counted. Images hidden from assistive tech and 1x1 tracking
+    pixels are skipped too.
+    """
     missing_alt = []
 
     for img in soup.find_all("img"):
-        alt = img.get("alt", "").strip()
-        if not alt:
-            missing_alt.append(img.get("src", "No src"))
+        if img.has_attr("alt"):
+            continue
+        if img.get("role") == "presentation" or img.get("aria-hidden") == "true":
+            continue
+        if str(img.get("width", "")).strip() in ("0", "1") and str(img.get("height", "")).strip() in ("0", "1"):
+            continue
+        missing_alt.append(img.get("src", "No src"))
 
     return missing_alt
 
