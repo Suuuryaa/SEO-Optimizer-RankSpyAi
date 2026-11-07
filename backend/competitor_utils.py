@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 from urllib.parse import urlparse
 import json
 import re
@@ -381,3 +383,109 @@ OUTPUT RULES:
     if competitors is None:
         raise RuntimeError(f"ALL_FAILED||Could not extract JSON list. Raw: {text[:300]}")
     return competitors
+
+
+# ── Brand rivals: "who competes with this business?" ─────────────────────────
+# The keyword decides which Google results we look at, not who the rivals are:
+# Flipkart's rivals are Amazon, Meesho, Snapdeal… whatever keyword is typed.
+_RIVAL_EXCLUDE = {"Social", "Encyclopedia", "Forum", "Directory", "Content", "Institutional", "Primary Venue"}
+
+_RIVALS_PROMPT = """You are a market analyst. Identify the business behind this website and its main competitors.
+
+{data}
+
+Return ONLY JSON:
+{{"business": "<what this business is, max 12 words>",
+  "home_country": "<ISO 3166-1 alpha-2 code of the country this website mainly serves, e.g. IN for flipkart.com, US for reebok.com>",
+  "competitors": [{{"name": "<brand>", "domain": "<main website domain>"}}]}}
+
+Rules for "competitors" (most important first; for a well-known brand give 8 to 10):
+- Well-known companies that compete with this business for the same customers today:
+  the same kind of business (a marketplace's rivals are other marketplaces, a sportswear
+  brand's rivals are other sportswear brands) in the same main country.
+- Use each competitor's own main website for that country (e.g. amazon.in for India).
+- Only companies that are still operating. If you are not sure a company or its website
+  exists, leave it out: fewer correct answers beat a long list.
+- Not the business itself, and not brands owned by the same parent company.
+- No social networks, news or review sites, directories, forums or marketplaces' seller pages.
+- For a small local business, only name local businesses of the same type that you are
+  confident exist; otherwise return fewer or none."""
+
+
+def _site_alive(domain: str) -> bool:
+    """The website exists: its name resolves to a public address that accepts a
+    secure connection. Big shops that stall or block bots still count as alive;
+    closed businesses whose domain is parked or dead don't (craftsvilla.com)."""
+    import socket
+    from net_safety import is_public_ip
+    for host in (domain, f"www.{domain}") if not domain.startswith("www.") else (domain,):
+        try:
+            addrs = {a[4][0] for a in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)}
+        except Exception:
+            continue
+        for ip in list(addrs)[:3]:
+            if not is_public_ip(ip):
+                continue
+            try:
+                # A real, working site completes a verified TLS handshake for its own name
+                import ssl
+                ctx = ssl.create_default_context()
+                with socket.create_connection((ip, 443), timeout=4) as raw:
+                    with ctx.wrap_socket(raw, server_hostname=host):
+                        return True
+            except Exception:
+                continue
+    return False
+
+
+def find_brand_rivals(url, gemini_api_key, title="", description="", limit=8):
+    """Ask Gemini for this business's main rivals and home market, then keep only
+    rivals whose websites actually respond. Returns (rivals, home_country_code).
+    rivals: [{"name", "domain", "link"}] — at most `limit`."""
+    if not gemini_api_key:
+        return [], None
+    from concurrent.futures import ThreadPoolExecutor
+    from ai.gemini import generate_text, sanitize_for_prompt, untrusted_block, GeminiError
+    domain = _get_domain(url)
+    data = (f"WEBSITE: {sanitize_for_prompt(domain, 100)}\n"
+            f"PAGE TITLE: {sanitize_for_prompt(title or '', 200)}\n"
+            f"PAGE DESCRIPTION: {sanitize_for_prompt(description or '', 300)}")
+    try:
+        raw = generate_text(gemini_api_key, _RIVALS_PROMPT.format(data=untrusted_block(data)),
+                            temperature=0.1, max_output_tokens=1500, timeout=30, json_output=True)
+    except GeminiError as e:
+        logger.warning(f"brand rivals: Gemini unavailable ({e.kind})")
+        return [], None
+    try:
+        import json as _json
+        s = raw.strip()
+        obj = _json.loads(s[s.find("{"): s.rfind("}") + 1])
+    except Exception:
+        logger.warning("brand rivals: unreadable reply")
+        return [], None
+
+    home = str(obj.get("home_country") or "").strip().upper()[:2] or None
+    seen, cands = set(), []
+    for c in obj.get("competitors") or []:
+        if not isinstance(c, dict):
+            continue
+        raw_d = str(c.get("domain") or c.get("website") or "").strip()
+        d = _get_domain(raw_d if "//" in raw_d else "https://" + raw_d).strip().lower()
+        if d.startswith("www."):
+            d = d[4:]
+        if not d or "." not in d or d in seen or _same_site(d, domain):
+            continue
+        if classify_competitor(f"https://{d}/", "", domain) in _RIVAL_EXCLUDE:
+            continue
+        seen.add(d)
+        cands.append({"name": str(c.get("name") or d)[:80], "domain": d})
+    logger.info(f"brand rivals for {domain}: home={home}, suggested={[c['domain'] for c in cands]}")
+    cands = cands[: limit + 4]                       # spares for dead sites
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        alive = list(pool.map(lambda c: _site_alive(c["domain"]), cands))
+    dead = [c["domain"] for c, ok in zip(cands, alive) if not ok]
+    if dead:
+        logger.info(f"brand rivals: dropped {len(dead)} that don't respond: {dead}")
+    rivals = [{**c, "link": f"https://{c['domain']}/"} for c, ok in zip(cands, alive) if ok][:limit]
+    return rivals, home

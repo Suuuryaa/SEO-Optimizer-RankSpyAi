@@ -234,3 +234,28 @@ if __name__ == "__main__":
         print(f"\n{url}")
         print(f"  → {format_location_display(location)}")
         print(f"  → SERPER params: gl={location['serper_gl']}, location={location['serper_location']}")
+
+
+def location_for_country(code):
+    """Location dict (same shape as get_location_from_url) for an ISO country code,
+    or None for codes we don't know."""
+    code = (code or "").upper()
+    names = {c: n for c, n in DOMAIN_TO_COUNTRY.values()}
+    names.setdefault("US", "United States")
+    if code not in names:
+        return None
+    return {
+        'country_code': code, 'country_name': names[code], 'city': '',
+        'location_string': names[code], 'serper_gl': code.lower(),
+        'serper_hl': COUNTRY_TO_HL.get(code), 'serper_location': names[code],
+    }
+
+
+def country_is_from_domain(url):
+    """True when the domain ending names a country (.co.nz, .in…); False for .com etc.,
+    where get_location_from_url only guessed 'United States'."""
+    try:
+        host = (urlparse(url if "//" in url else "https://" + url).hostname or "").lower()
+    except Exception:
+        return False
+    return any(host.endswith(d) for d in DOMAIN_TO_COUNTRY if d != '.com')

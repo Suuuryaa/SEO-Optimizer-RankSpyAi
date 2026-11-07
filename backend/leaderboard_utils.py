@@ -42,7 +42,8 @@ def get_venue_name(url, title):
 
 # User-safe messages for a competitor page we couldn't scan, by FetchError kind
 ROW_ERRORS = {
-    "blocked":      "Couldn't scan this site, it blocked our crawler.",
+    "blocked":      "This site blocks automated checks, so we can't score it.",
+    "unreadable":   "This site only shows its content to real browsers, so we can't score it.",
     "not_found":    "Couldn't scan this site, the page returned 'not found'.",
     "server_error": "Couldn't scan this site, it returned a server error.",
     "timeout":      "Couldn't scan this site, it took too long to respond.",
@@ -82,6 +83,22 @@ def analyze_venue(url, keyword, include_text=False):
         text = get_text_content(soup)
 
         wc = count_words(text)
+        # Big shops often send scanners an empty shell (content built by JavaScript,
+        # or a bot check). Try a real browser once; if it's still empty, say so
+        # instead of scoring a blank page (amazon.in came out as "20/100").
+        if wc < 30:
+            from seo_utils import render_page_html
+            from bs4 import BeautifulSoup as _BS
+            html = render_page_html(url)
+            if html:
+                rendered = _BS(html, "lxml")
+                if count_words(get_text_content(rendered)) > wc:
+                    soup = rendered
+                    title, meta, h1 = get_title(soup), get_meta_description(soup), get_h1_tags(soup)
+                    text = get_text_content(soup)
+                    wc = count_words(text)
+            if wc < 30:
+                raise FetchError("unreadable", "No readable content")
         kc = count_keyword(text, keyword)
         kd = keyword_density(text, keyword)
 

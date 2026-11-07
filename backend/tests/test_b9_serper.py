@@ -81,10 +81,13 @@ def test_google_positions_passes_gl(monkeypatch):
     import rank_tracker
     seen = {}
 
-    def fake_links(keyword, key, pages=3, gl=None, hl=None):
+    def fake_results(keyword, key, pages=3, gl=None, hl=None):
         seen.update(gl=gl, hl=hl)
-        return ["https://www.example.com/", "https://rival.com/"]
-    monkeypatch.setattr(rank_tracker, "serp_organic_links", fake_links)
+        return [{"link": "https://www.example.com/", "title": "Example kw", "snippet": ""},
+                {"link": "https://rival.com/", "title": "Rival", "snippet": ""}]
+    monkeypatch.setattr(rank_tracker, "serp_organic_results", fake_results)
     out = main._google_positions("kw", ["https://example.com/a", "https://ample.com/"], "key", "gb", "en")
     assert seen == {"gl": "gb", "hl": "en"}
     assert out == {"https://example.com/a": 1, "https://ample.com/": None}
+    pos, listings = main._google_positions("kw", ["https://example.com/a"], "key", "gb", "en", True)
+    assert listings["https://example.com/a"]["title"] == "Example kw"

@@ -80,10 +80,11 @@ from seo_utils import (
 from scoring import calculate_seo_score, get_score_band, SCORING_VERSION
 from summary_utils import get_executive_summary, generate_ai_executive_summary
 from leaderboard_utils import analyze_venue, row_error
-from location_utils import get_location_from_url
+from location_utils import get_location_from_url, location_for_country, country_is_from_domain
 from comparison_utils import compare_metric
 from pagespeed_utils import get_pagespeed_data
-from competitor_utils import get_competitors_via_gemini, filter_direct_competitors
+from google_check import google_seo_check
+from competitor_utils import get_competitors_via_gemini, filter_direct_competitors, find_brand_rivals
 from serp_utils import progressive_competitor_search
 from insight_utils import generate_strategic_insights
 from geo_utils import (
@@ -313,7 +314,8 @@ def _refund(gate: dict) -> None:
         refund()
 
 
-def _google_positions(keyword: str, urls: list[str], serper_key: str, gl: str = "us", hl: str | None = None):
+def _google_positions(keyword: str, urls: list[str], serper_key: str, gl: str = "us", hl: str | None = None,
+                      with_listings: bool = False):
     """Organic Google position (top ~30) per URL's site for `keyword`.
 
     Returns {url: position | None (not in top 30)}, or None when the search
@@ -328,18 +330,21 @@ def _google_positions(keyword: str, urls: list[str], serper_key: str, gl: str = 
         h = (urlparse(u if "//" in u else "https://" + u).hostname or "").lower()
         return h[4:] if h.startswith("www.") else h
 
-    from rank_tracker import serp_organic_links
+    from rank_tracker import serp_organic_results
     try:
-        links = serp_organic_links(keyword, serper_key, gl=gl, hl=hl)
+        results = serp_organic_results(keyword, serper_key, gl=gl, hl=hl)
     except Exception as exc:
         logger.warning(f"google position lookup failed: {exc}")
         return None
-    hosts = [site(l) for l in links]
-    out = {}
+    hosts = [site(r["link"]) for r in results]
+    out, listings = {}, {}
     for u in urls:
         s = site(u)
-        out[u] = next((i for i, h in enumerate(hosts, 1) if s and (h == s or h.endswith("." + s))), None)
-    return out
+        i = next((i for i, h in enumerate(hosts, 1) if s and (h == s or h.endswith("." + s))), None)
+        out[u] = i
+        if i is not None:
+            listings[u] = results[i - 1]
+    return (out, listings) if with_listings else out
 
 
 def _analysis_http_error(exc: Exception) -> HTTPException:
@@ -747,6 +752,12 @@ async def analyze(req: AnalyzeRequest, request: Request):
     return result
 
 
+def _domain_of(url: str) -> str:
+    from urllib.parse import urlparse
+    h = (urlparse(url).hostname or url).lower()
+    return h[4:] if h.startswith("www.") else h
+
+
 async def competitors(req: CompetitorsRequest, request: Request):
     gate = await _run(_gate, req.user_api_keys, request)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
@@ -771,14 +782,35 @@ async def competitors(req: CompetitorsRequest, request: Request):
     primary_raw.pop("_x_robots_tag", None)
     primary_text = primary_raw.pop("_text", "")
 
-    # Competitor discovery
+    # Competitor discovery: first the business's own main rivals (Gemini names them,
+    # we keep only sites that respond); search-based discovery only as a fallback.
     _step("Finding your competitors")
+    rivals, home = [], None
+    if keys["gemini"]:
+        try:
+            rivals, home = await _run(find_brand_rivals, req.url, keys["gemini"],
+                                      primary_raw.get("title") or "", primary_raw.get("meta_description") or "")
+        except Exception as exc:
+            logger.warning(f"/competitors brand rivals failed: {exc}")
+    # .com/.net etc. say nothing about the market: use the business's home country
+    if home and not country_is_from_domain(req.url):
+        loc = location_for_country(home)
+        if loc:
+            location = loc
+            gl, hl = location["serper_gl"], location.get("serper_hl")
     try:
-        _, direct_competitors, search_log, location_msg = await _run(
-            progressive_competitor_search,
-            req.url, req.keyword, keys["serper"],
-            filter_direct_competitors, 3, keys["gemini"] or None,
-        )
+        if len(rivals) >= 3:
+            direct_competitors = [{"Link": r["link"], "Title": r["name"], "Domain": r["domain"],
+                                   "SERP Rank": "N/A"} for r in rivals]
+            search_log = [f"🤖 Main competitors of {_domain_of(req.url)}: "
+                          + ", ".join(r["name"] for r in rivals)]
+            location_msg = f"🤖 Main competitors in {location['country_name']}"
+        else:
+            _, direct_competitors, search_log, location_msg = await _run(
+                progressive_competitor_search,
+                req.url, req.keyword, keys["serper"],
+                filter_direct_competitors, 3, keys["gemini"] or None,
+            )
     except Exception as exc:
         logger.error(f"/competitors discovery error: {exc}")
         raise HTTPException(status_code=502, detail="Competitor discovery failed. Please try again.")
@@ -821,14 +853,38 @@ async def competitors(req: CompetitorsRequest, request: Request):
 
     # Real Google positions for the site and each competitor (Serper, searched in the site's country).
     _step("Checking real Google positions")
-    positions = await _run(_google_positions, req.keyword, [req.url] + [r.get("URL", "") for r in comp_rows],
-                           keys["serper"], gl, hl)
+    got = await _run(_google_positions, req.keyword, [req.url] + [r.get("URL", "") for r in comp_rows],
+                     keys["serper"], gl, hl, True)
+    positions, listings = got if got is not None else (None, {})
     def _pos(u):
         return "unknown" if positions is None else positions.get(u)
     primary_rank = _pos(req.url)
     primary_raw["google_position"] = primary_rank
     for r in comp_rows:
         r["SERP Rank"] = _pos(r.get("URL", ""))
+
+    # Sites that block our scanner: use Google's own data instead — the page's
+    # Google listing (title/snippet) and Google's Lighthouse SEO check of the page
+    # that ranks (or the homepage). We never try to get past a site's bot protection.
+    blocked_rows = [r for r in comp_rows if r.get("error")]
+    if blocked_rows:
+        _step("Getting Google's data for sites that block scanners")
+        pagespeed_key = keys.get("pagespeed") or ""
+
+        async def _google_data(r):
+            u = r.get("URL", "")
+            lst = (listings or {}).get(u)
+            if lst:
+                r["google_listing"] = {
+                    "link": lst.get("link", ""), "title": lst.get("title", ""), "snippet": lst.get("snippet", ""),
+                    "keyword_in_title": match_keyword(lst.get("title", ""), req.keyword),
+                }
+            target = (lst or {}).get("link") or u
+            check = await _run(google_seo_check, target, pagespeed_key) if pagespeed_key else None
+            if check:
+                r["google_check"] = check
+
+        await asyncio.gather(*[_google_data(r) for r in blocked_rows])
 
     # AI summary
     ai_summary = None

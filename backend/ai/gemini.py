@@ -174,6 +174,7 @@ def generate_text(
     temperature: float = 0.4,
     max_output_tokens: int = 8192,
     timeout: int = 60,
+    json_output: bool = False,
 ) -> str:
     """Return generated text, trying models in order. Raises GeminiError."""
     if not api_key:
@@ -181,7 +182,8 @@ def generate_text(
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_output_tokens},
+        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_output_tokens,
+                             **({"responseMimeType": "application/json"} if json_output else {})},
     }
     headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
     errors: list[str] = []

@@ -146,12 +146,18 @@ SERP_DEPTH_PAGES = 3   # Serper ignores num=100 now and returns ~10 per page
 
 def serp_organic_links(keyword: str, serper_key: str, pages: int = SERP_DEPTH_PAGES,
                        gl: str | None = None, hl: str | None = None) -> list[str]:
-    """Organic result links in Google order, top ~10 x pages (1 Serper credit per page).
+    """Organic result links in Google order, top ~10 x pages (1 Serper credit per page)."""
+    return [r["link"] for r in serp_organic_results(keyword, serper_key, pages, gl, hl)]
+
+
+def serp_organic_results(keyword: str, serper_key: str, pages: int = SERP_DEPTH_PAGES,
+                         gl: str | None = None, hl: str | None = None) -> list[dict]:
+    """Organic results in Google order: [{"link", "title", "snippet"}].
 
     Google redirect entries (google.com/...) that Serper mixes into "organic" are
     dropped so they don't take up positions.
     """
-    links: list[str] = []
+    links: list[dict] = []
     payload = {"q": keyword, "gl": (gl or "us").lower()}   # US only when the country is unknown
     if hl:
         payload["hl"] = hl
@@ -171,7 +177,7 @@ def serp_organic_links(keyword: str, serper_key: str, pages: int = SERP_DEPTH_PA
             host = (urlparse(link).hostname or "").lower()
             if host.startswith("google.") or ".google." in host:
                 continue
-            links.append(link)
+            links.append({"link": link, "title": r.get("title", ""), "snippet": r.get("snippet", "")})
     return links
 
 

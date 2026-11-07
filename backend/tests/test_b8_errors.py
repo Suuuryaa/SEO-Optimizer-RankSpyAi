@@ -88,7 +88,7 @@ def test_competitor_row_error_is_user_safe(public_dns, monkeypatch):
         raise FetchError("blocked", "raw internal text")
     monkeypatch.setattr(leaderboard_utils, "get_page_soup", boom)
     row = leaderboard_utils.analyze_venue("https://example.com/", "kw")
-    assert row["error"] == "Couldn't scan this site, it blocked our crawler." and row["error_kind"] == "blocked"
+    assert row["error"] == "This site blocks automated checks, so we can't score it." and row["error_kind"] == "blocked"
 
     def boom2(u):
         raise ValueError("Traceback secret")

@@ -1,6 +1,6 @@
 import { scoreBand } from '../../lib/score'
 
-const BLOCKED_COPY = "Couldn't scan this site, it blocked our crawler."
+const BLOCKED_COPY = "This site blocks automated checks, so we can't score it."
 
 // Google position: int → "#n", null → "Not in top 30", "unknown"/missing → "Unknown"
 function positionInfo(pos) {
@@ -54,7 +54,27 @@ function normalizeComp(c) {
     pos: positionInfo('SERP Rank' in c ? c['SERP Rank'] : c.google_position),
     // New backends send user-safe text with error_kind; older ones sent raw exception text.
     error: blocked ? ((c.error_kind && c.error) ? String(c.error) : BLOCKED_COPY) : null,
+    // When the site blocks our scanner: Google's own SEO check and its Google listing
+    google: blocked && c.google_check ? {
+      score: Number(c.google_check.seo_score),
+      checked: hostOf(c.google_check.checked_url || ''),
+    } : null,
+    listingKw: blocked && c.google_listing ? kwFlag(null, c.google_listing.keyword_in_title) : null,
   }
+}
+
+// Keyword-in-title cell: from the page itself, or from Google's listing for blocked sites
+function TitleCell({ row }) {
+  if (!row.error) return <KwCell v={row.kwTitle} />
+  if (row.listingKw) {
+    return (
+      <span title="From the title Google shows for this page">
+        <KwCell v={row.listingKw === 'unknown' ? 'no' : row.listingKw} />
+        <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)' }}>Google listing</span>
+      </span>
+    )
+  }
+  return <span style={{ color: 'var(--text-muted)' }}>—</span>
 }
 
 function KwCell({ v }) {
@@ -65,6 +85,15 @@ function KwCell({ v }) {
 }
 
 function ScoreCell({ row }) {
+  if (row.error && row.google) {
+    const g = scoreBand(row.google.score)
+    return (
+      <span title="Google Lighthouse SEO check. A different scale from our on-page score.">
+        <span style={{ color: g.color, fontWeight: 800 }}>{row.google.score}</span>
+        <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)' }}>Google check</span>
+      </span>
+    )
+  }
   if (row.error) return <span style={{ color: 'var(--text-muted)' }}>—</span>
   const b = scoreBand(row.score)
   return <span style={{ color: b.color, fontWeight: 800 }}>{row.score}</span>
@@ -83,7 +112,13 @@ function SiteCell({ row }) {
           {hostOf(row.url) || row.title}
         </span>
       </div>
-      {row.error && (
+      {row.error && row.google && (
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px' }}>
+          Blocks our scanner, so this uses Google&rsquo;s own SEO check
+          {row.google.checked && row.google.checked !== hostOf(row.url) ? ` (Google checked ${row.google.checked})` : ''}.
+        </div>
+      )}
+      {row.error && !row.google && (
         <div style={{ fontSize: '12px', color: '#f0a0a6', marginTop: '3px' }}>{row.error}</div>
       )}
     </div>
@@ -106,7 +141,7 @@ function RowCard({ row }) {
           ['Google position', <span key="p">{row.pos.label}</span>],
           ['On-page score', <ScoreCell key="s" row={row} />],
           ['Words', row.error ? '—' : (row.words != null ? Number(row.words).toLocaleString() : '—')],
-          ['Keyword in title', row.error ? '—' : <KwCell key="t" v={row.kwTitle} />],
+          ['Keyword in title', <TitleCell key="t" row={row} />],
           ['Keyword in H1', row.error ? '—' : <KwCell key="h" v={row.kwH1} />],
         ].map(([k, v]) => (
           <div key={k} style={{ minWidth: 0 }}>
@@ -134,9 +169,10 @@ export default function CompetitorResults({ data }) {
     )
   }
 
-  // Order by real Google position; sites we couldn't scan go last.
+  // Order by real Google position; sites with no data at all go last.
+  const noData = r => (r.error && !r.google ? 1 : 0)
   const sorted = [...competitors].sort((a, b) =>
-    (a.error ? 1 : 0) - (b.error ? 1 : 0) || a.pos.sort - b.pos.sort || b.score - a.score)
+    noData(a) - noData(b) || a.pos.sort - b.pos.sort || b.score - a.score)
   const rows = primary ? [primary, ...sorted] : sorted
 
   return (
@@ -146,6 +182,7 @@ export default function CompetitorResults({ data }) {
         {locationLabel ? `Searched Google in: ${locationLabel}` : (data?.location_msg || '')}
         {(locationLabel || data?.location_msg) ? ' · ' : ''}
         On-page score is our estimate from each page's HTML; Google position is the real search result.
+        Sites that block our scanner show Google&rsquo;s own SEO check instead.
       </p>
 
       {competitors.length === 0 && (
@@ -174,7 +211,7 @@ export default function CompetitorResults({ data }) {
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{row.pos.label}</td>
                 <td style={td}><ScoreCell row={row} /></td>
                 <td style={td}>{row.error ? '—' : (row.words != null ? Number(row.words).toLocaleString() : '—')}</td>
-                <td style={td}>{row.error ? '—' : <KwCell v={row.kwTitle} />}</td>
+                <td style={td}><TitleCell row={row} /></td>
                 <td style={td}>{row.error ? '—' : <KwCell v={row.kwH1} />}</td>
               </tr>
             ))}
