@@ -30,9 +30,10 @@ export default {
       'Content-Security-Policy',
       [
         "default-src 'self'",
-        "script-src 'self'",
+        // Cloudflare Web Analytics (cookie-free visit counts) loads its beacon from here
+        "script-src 'self' https://static.cloudflareinsights.com",
         "style-src 'self' 'unsafe-inline'",
-        "connect-src 'self' https://affectionate-recreation-production-e508.up.railway.app",
+        "connect-src 'self' https://affectionate-recreation-production-e508.up.railway.app https://cloudflareinsights.com",
         "img-src 'self' data:",
         "font-src 'self'",
         "frame-ancestors 'none'",
