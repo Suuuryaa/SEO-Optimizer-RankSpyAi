@@ -6,6 +6,16 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), cloudflare()],
+  environments: {
+    client: {
+      build: {
+        rollupOptions: {
+          // Two pages: the app (/) and the FAQ (/faq → faq.html, its own title and description)
+          input: { main: 'index.html', faq: 'faq.html' },
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/analyze': 'http://localhost:8000',

@@ -1,37 +1,8 @@
 import { useId, useState } from 'react'
 
-const FAQS = [
-  {
-    q: 'What does RankSpy AI analyze?',
-    a: 'RankSpy AI crawls your URL like a search engine and runs 30+ on-page checks covering meta tags, content quality, link structure, technical setup, and (optionally) AI/GEO signals.',
-  },
-  {
-    q: 'Is it free?',
-    a: 'Yes. Everyone shares 100 free scans a day. Add your own free Gemini and Serper keys for up to 100 scans a day of your own.',
-  },
-  {
-    q: 'What is the SEO score?',
-    a: 'The SEO score (0–100) reflects how well your page is optimized. Scores above 70 indicate a strong foundation, 40–69 needs optimization, and below 40 means critical issues need fixing immediately.',
-  },
-  {
-    q: 'How does the competitor finder work?',
-    a: 'Enter your URL and keyword, and we search the web for direct competitors ranking for that keyword. We then analyze each competitor\'s SEO so you can see exactly where you stand.',
-  },
-  {
-    q: 'How do I improve my score?',
-    a: 'After analysis, you\'ll receive a prioritized list of recommendations sorted by impact — Critical, High, and Medium priority. Work through them top to bottom.',
-  },
-  {
-    q: 'Does it work for any website?',
-    a: 'Yes — any publicly accessible URL works. It\'s especially useful for business websites, blogs, e-commerce stores, and landing pages.',
-  },
-  {
-    q: 'What are GEO / AI signals?',
-    a: 'GEO (Generative Engine Optimization) checks how visible your site is to AI tools like ChatGPT and Perplexity. We check AI crawler access, LLMs.txt files, and E-E-A-T signals.',
-  },
-]
+import { HOME_FAQ } from '../faqData'
 
-function FAQItem({ q, a }) {
+export function FAQItem({ q, a }) {
   const [open, setOpen] = useState(false)
   const id = useId()
 
@@ -129,10 +100,15 @@ export default function FAQSection() {
             padding: '0 20px',
           }}
         >
-          {FAQS.map((item) => (
+          {HOME_FAQ.map((item) => (
             <FAQItem key={item.q} q={item.q} a={item.a} />
           ))}
         </div>
+        <p style={{ textAlign: 'center', margin: '20px 0 0' }}>
+          <a href="/faq" style={{ color: '#ff8a92', fontWeight: 700, fontSize: '14px', textDecoration: 'none' }}>
+            See all questions &rarr;
+          </a>
+        </p>
       </div>
     </div>
   )

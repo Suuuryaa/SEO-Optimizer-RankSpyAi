@@ -2,7 +2,8 @@ export default {
   async fetch(request, env) {
     // One address only: https://rankspyseo.xyz (plain http and www redirect here)
     const url = new URL(request.url);
-    if (url.protocol === 'http:' || url.hostname.startsWith('www.')) {
+    const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+    if (!local && (url.protocol === 'http:' || url.hostname.startsWith('www.'))) {
       url.protocol = 'https:';
       url.hostname = url.hostname.replace(/^www\./, '');
       return Response.redirect(url.toString(), 301);
