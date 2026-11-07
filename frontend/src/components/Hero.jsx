@@ -1,193 +1,63 @@
-import { useEffect, useRef } from 'react'
-
-const TICKER_ITEMS = [
-  'Keyword Density', 'SERP Position Tracking',
-  'Meta Tag Optimization', 'Schema Markup',
-  'Competitor Gap Analysis', 'E-E-A-T Signals', 'Content Freshness',
-  'Structured Data', 'Open Graph Tags', 'AI Crawler Access',
-]
-const doubled = [...TICKER_ITEMS, ...TICKER_ITEMS]
-
-export default function Hero() {
-  const glowRef = useRef(null)
-
-  // Ambient glow drifts with the mouse (skipped for reduced motion)
-  useEffect(() => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    let frame = 0
-    const onMouseMove = (e) => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        if (!glowRef.current) return
-        const x = (e.clientX / window.innerWidth - 0.5) * 60
-        const y = (e.clientY / window.innerHeight - 0.5) * 40
-        glowRef.current.style.transform = `translate(calc(-50% + ${x}px), ${y}px)`
-      })
-    }
-    window.addEventListener('mousemove', onMouseMove, { passive: true })
-    return () => {
-      cancelAnimationFrame(frame)
-      window.removeEventListener('mousemove', onMouseMove)
-    }
-  }, [])
-
+// First screen: say what the tool does and put the scan form right there.
+// (Replaces the giant wordmark, buzzword pills and ticker, which pushed the
+// form below the fold on most screens.)
+export default function Hero({ children }) {
   return (
-    <div className="no-print" style={{ position: 'relative', overflow: 'hidden', borderBottom: '1px solid #1a1a1a' }}>
-      {/* Ambient glow follows mouse */}
+    <div className="no-print hero" style={{ position: 'relative', overflow: 'hidden', borderBottom: '1px solid #1a1a1a' }}>
       <div
-        ref={glowRef}
+        aria-hidden="true"
         style={{
-          position: 'absolute',
-          top: '10%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: '700px',
-          height: '400px',
-          background: 'radial-gradient(ellipse at center, rgba(230,57,70,0.13) 0%, transparent 70%)',
-          pointerEvents: 'none',
-          zIndex: 0,
-          willChange: 'transform',
-          transition: 'transform 1.4s cubic-bezier(0.22, 1, 0.36, 1)',
+          position: 'absolute', top: '-10%', left: '50%', transform: 'translateX(-50%)',
+          width: '900px', height: '420px', pointerEvents: 'none', zIndex: 0,
+          background: 'radial-gradient(ellipse at center, rgba(230,57,70,0.12) 0%, transparent 70%)',
         }}
       />
 
-      <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', padding: '96px 24px 72px' }}>
-        {/* Live badge */}
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'rgba(230,57,70,0.08)',
-            border: '1px solid rgba(230,57,70,0.2)',
-            borderRadius: '100px',
-            padding: '5px 14px',
-            marginBottom: '36px',
-          }}
-        >
-          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#e63946', animation: 'pulse 2s ease infinite' }} />
-          <span style={{ fontSize: '11px', fontWeight: 700, color: '#e63946', letterSpacing: '0.1em' }}>
-            AI-POWERED SEO INTELLIGENCE
-          </span>
-        </div>
-
-        {/* Big title */}
-        <div className="hero-in">
-          <h1
-            style={{
-              fontSize: 'clamp(56px, 10vw, 100px)',
-              fontWeight: 900,
-              letterSpacing: '-4px',
-              lineHeight: 0.95,
-              color: '#fff',
-              marginBottom: '8px',
-            }}
-          >
-            RANK
-            <span style={{ color: '#e63946', position: 'relative', display: 'inline-block', marginLeft: '10px' }}>
-              SPY
-              <span
-                style={{
-                  position: 'absolute',
-                  bottom: '-2px',
-                  left: 0,
-                  right: 0,
-                  height: '3px',
-                  background: 'linear-gradient(90deg, transparent, #e63946, transparent)',
-                  borderRadius: '2px',
-                }}
-              />
-            </span>
-          </h1>
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: '960px', margin: '0 auto', padding: '28px 16px 32px' }}>
+        <div style={{ textAlign: 'center', marginBottom: '20px' }} className="hero-in">
           <div
             style={{
-              fontSize: 'clamp(56px, 10vw, 100px)',
-              fontWeight: 900,
-              letterSpacing: '-4px',
-              lineHeight: 0.95,
-              background: 'linear-gradient(135deg, #fff 30%, #3a3a3a 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-              marginBottom: '40px',
+              display: 'inline-flex', alignItems: 'center', gap: '8px',
+              background: 'rgba(230,57,70,0.08)', border: '1px solid rgba(230,57,70,0.22)',
+              borderRadius: '100px', padding: '5px 14px', marginBottom: '14px',
+              fontSize: '12px', fontWeight: 600, color: '#ff8a93', letterSpacing: '0.02em',
             }}
           >
-            AI
+            Free SEO checker · AI-visibility · Competitor comparison
           </div>
-        </div>
 
-        {/* Subtitle */}
-        <div className="hero-in" style={{ animationDelay: '0.15s' }}>
-          <p
+          <h1
             style={{
-              fontSize: 'clamp(16px, 2.5vw, 20px)',
-              color: '#a0a0a0',
-              letterSpacing: '-0.01em',
-              lineHeight: 1.5,
-              maxWidth: '520px',
-              margin: '0 auto 48px',
+              fontSize: 'clamp(30px, 4.6vw, 52px)', fontWeight: 800, letterSpacing: '-0.03em',
+              lineHeight: 1.08, color: '#fff', margin: '0 auto 12px', maxWidth: '820px',
             }}
           >
-            SEO Audit & Competitor Intel.{' '}
-            <span style={{ color: '#e63946' }}>Powered by AI</span>, driven by data.
+            Find out why your page isn&rsquo;t ranking <span style={{ color: '#e63946' }}>and exactly what to fix</span>
+          </h1>
+
+          <p style={{ fontSize: 'clamp(15px, 1.6vw, 18px)', color: 'var(--text-body, #a0a0a0)', lineHeight: 1.55, maxWidth: '700px', margin: '0 auto' }}>
+            Paste a page and your keyword. Get a plain-English to-do list, an AI-visibility score
+            and a side-by-side with the sites beating you on Google.
           </p>
         </div>
 
-        {/* Pills */}
-        <div
-          className="hero-in"
+        <div className="hero-in" style={{ animationDelay: '0.1s', maxWidth: '760px', margin: '0 auto' }}>
+          {children}
+        </div>
+
+        <ul
+          className="hero-trust"
           style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            justifyContent: 'center',
-            gap: '8px',
-            maxWidth: '640px',
-            margin: '0 auto',
-            animationDelay: '0.3s',
+            listStyle: 'none', padding: 0, margin: '14px auto 0', display: 'flex', flexWrap: 'wrap',
+            justifyContent: 'center', gap: '8px 22px', fontSize: '13px', color: 'var(--text-muted, #8a8a8a)',
           }}
         >
-          {[
-            'Plain-English to-do list', 'Competitive Benchmarking',
-            'Technical SEO Audit', 'AI-Powered Insights',
-            'Real Google positions', 'Strategic Action Plans',
-          ].map((p) => (
-            <span key={p} className="feature-pill">{p}</span>
+          {['Free · no sign-up', '~1 minute per scan', '30+ on-page checks', 'Real Google positions'].map((t) => (
+            <li key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <span aria-hidden="true" style={{ color: '#22c55e' }}>✓</span>{t}
+            </li>
           ))}
-        </div>
-      </div>
-
-      {/* Ticker */}
-      <div
-        className="ticker-wrap"
-        style={{
-          overflow: 'hidden',
-          borderTop: '1px solid #1a1a1a',
-          background: '#080808',
-          padding: '12px 0',
-          userSelect: 'none',
-          position: 'relative',
-          zIndex: 1,
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'linear-gradient(90deg, #080808 0%, transparent 8%, transparent 92%, #080808 100%)',
-            zIndex: 2,
-            pointerEvents: 'none',
-          }}
-        />
-        <div className="ticker-track">
-          {doubled.map((item, i) => (
-            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
-              <span style={{ color: '#8a8a8a', fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                {item}
-              </span>
-              <span style={{ color: 'rgba(230,57,70,0.5)', margin: '0 20px', fontSize: '8px' }}>◆</span>
-            </span>
-          ))}
-        </div>
+        </ul>
       </div>
     </div>
   )

@@ -14,6 +14,8 @@ const MESSAGES = {
   unreachable: "We couldn't find that domain.",
   not_html: "That URL isn't a web page.",
   rate_limited: "Today's free scans are used up.",
+  daily_limit: () => `You've used today's free scans. More at ${resetTimeLocal()} (your time). Rescanning a page you already scanned is still free.`,
+  compare_limit: () => `You've used today's free competitor comparison. More at ${resetTimeLocal()} (your time).`,
   too_many_running: 'You already have 2 scans running. Wait for one to finish, then try again.',
   busy: 'Our server is busy. Try again in a minute.',
   network: "Can't reach our server. Check your connection.",
@@ -23,7 +25,18 @@ const MESSAGES = {
 }
 
 export function messageFor(kind) {
-  return MESSAGES[kind] || 'Something went wrong. Please try again.'
+  const m = MESSAGES[kind]
+  if (typeof m === 'function') return m()
+  return m || 'Something went wrong. Please try again.'
+}
+
+// Free allowances reset at 00:00 UTC; show that moment in the visitor's own time.
+export function resetTimeLocal(iso) {
+  const d = iso ? new Date(iso) : (() => {
+    const n = new Date()
+    return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1))
+  })()
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
 export const AI_REPORT_UNAVAILABLE =

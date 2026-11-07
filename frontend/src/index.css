@@ -252,3 +252,13 @@ img, svg, video { max-width: 100%; }
   .fade-in, .reveal { animation: none !important; opacity: 1 !important; transform: none !important; }
   section, li, tr { break-inside: avoid; }
 }
+
+/* Zig-zag feature rows */
+.feature-row { display: grid; grid-template-columns: 1fr 1.1fr; gap: 56px; align-items: center; }
+.feature-row.flip .feature-copy { order: 2; }
+.feature-row.flip .feature-visual { order: 1; }
+@media (max-width: 860px) {
+  .feature-row, .feature-row.flip { grid-template-columns: 1fr; gap: 28px; }
+  .feature-row.flip .feature-copy, .feature-row.flip .feature-visual { order: 0; }
+  .feature-rows { gap: 64px !important; }
+}

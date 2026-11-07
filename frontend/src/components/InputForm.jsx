@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { getRateStatus } from '../api'
+import { getRateStatus, resetTimeLocal } from '../api'
 
-const DEFAULT_LIMIT = 100   // replaced by /rate-status daily_limit once loaded
+const DEFAULT_LIMIT = 3     // replaced by /rate-status scans_limit once loaded
 
 const SERPER_RE = /^[a-f0-9]{40}$/
 const GEMINI_RE = /^AIzaSy[A-Za-z0-9_-]{33}$/
@@ -61,8 +61,11 @@ export default function InputForm({
   const [keyword, setKeyword] = useState(initial?.keyword ?? '')
   const [focusedUrl, setFocusedUrl] = useState(false)
   const [focusedKw, setFocusedKw] = useState(false)
-  const [globalUsed, setGlobalUsed] = useState(null)   // null = loading
+  const [globalUsed, setGlobalUsed] = useState(null)   // this visitor's scans today; null = loading
   const [globalLimit, setGlobalLimit] = useState(DEFAULT_LIMIT)
+  const [resetsAt, setResetsAt] = useState(null)
+  const [paused, setPaused] = useState(false)
+  const [comparisonsLeft, setComparisonsLeft] = useState(null)
   const [showTooltip, setShowTooltip] = useState(false)
   const [crawlMode, setCrawlMode] = useState('standard')
   const [geoMode, setGeoMode] = useState(false)
@@ -81,6 +84,9 @@ export default function InputForm({
         if (!alive) return
         if (data?.ip_used != null) setGlobalUsed(data.ip_used)
         if (data?.daily_limit) setGlobalLimit(data.daily_limit)
+        if (data?.resets_at) setResetsAt(data.resets_at)
+        setPaused(!!data?.paused)
+        if (data?.comparisons_remaining != null) setComparisonsLeft(data.comparisons_remaining)
       })
       .catch(() => { if (alive) setGlobalUsed(v => v ?? 0) })
     return () => { alive = false }
@@ -88,11 +94,13 @@ export default function InputForm({
 
   const checksUsed = globalUsed ?? 0
   const checksLeft = Math.max(0, globalLimit - checksUsed)
-  const limitReached = globalUsed !== null && checksLeft === 0
+  const limitReached = globalUsed !== null && (checksLeft === 0 || paused)
   const geminiOk = GEMINI_RE.test(geminiKey.trim())
   const serperOk = SERPER_RE.test(serperKey.trim())
   const hasOwnKeys = geminiOk && serperOk
   const blocked = !hasOwnKeys && limitReached
+  // Competitor comparisons have their own daily allowance, separate from page scans
+  const compareBlocked = !hasOwnKeys && (paused || comparisonsLeft === 0)
 
   function userApiKeys() {
     return hasOwnKeys ? { gemini_key: geminiKey.trim(), serper_key: serperKey.trim() } : undefined
@@ -111,9 +119,12 @@ export default function InputForm({
       document.getElementById('kw-input')?.focus()
       return
     }
-    if (blocked) return
+    if (mode === 'competitors' ? compareBlocked : blocked) return
     if (cleanUrl !== url) setUrl(cleanUrl)
-    if (!hasOwnKeys) setGlobalUsed(v => (v ?? 0) + 1)
+    if (!hasOwnKeys) {
+      if (mode === 'competitors') setComparisonsLeft(v => Math.max(0, (v ?? 1) - 1))
+      else setGlobalUsed(v => (v ?? 0) + 1)
+    }
     const params = { url: cleanUrl, keyword: keyword.trim(), crawlMode, geo: geoMode, userApiKeys: userApiKeys() }
     if (mode === 'competitors') onCompetitors(params)
     else onAnalyze(params)
@@ -151,6 +162,7 @@ export default function InputForm({
   )
 
   const disabled = loading || blocked
+  const compareDisabled = loading || compareBlocked
 
   return (
     <div
@@ -159,8 +171,8 @@ export default function InputForm({
         background: '#161616',
         border: '1px solid #2a2a2a',
         borderRadius: '12px',
-        maxWidth: '700px',
-        margin: '32px auto',
+        maxWidth: '760px',
+        margin: '0 auto',
       }}
     >
       {/* Tab bar */}
@@ -191,11 +203,14 @@ export default function InputForm({
           </span>
         ) : (
           <span style={{ fontSize: '12px', color: limitReached ? '#ff6b75' : 'var(--text-body)' }}>
-            {globalUsed === null ? 'Loading…' : (
+            {globalUsed === null ? 'Loading…' : paused ? (
+              <>Free scans are paused for today. Back at {resetTimeLocal(resetsAt)}.</>
+            ) : checksLeft === 0 ? (
+              <>You&rsquo;ve used today&rsquo;s {globalLimit} free scans. More at {resetTimeLocal(resetsAt)}.</>
+            ) : (
               <>
-                Shared free pool:{' '}
                 <span style={{ fontWeight: 700, color: '#ff6b75' }}>{checksLeft} of {globalLimit}</span>{' '}
-                scans left today
+                free scans left today
               </>
             )}
           </span>
@@ -203,7 +218,7 @@ export default function InputForm({
         <div style={{ position: 'relative' }}>
           <button
             type="button"
-            aria-label="About the free scan pool"
+            aria-label="About free scans"
             aria-expanded={showTooltip}
             aria-controls="pool-tooltip"
             onClick={() => setShowTooltip(v => !v)}
@@ -224,8 +239,10 @@ export default function InputForm({
               padding: '10px 14px', width: '230px', maxWidth: '70vw', fontSize: '12px', color: 'var(--text-body)',
               lineHeight: 1.5, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
             }}>
-              Everyone shares {globalLimit} free scans a day. Resets daily at midnight UTC.
-              Add both of your own free keys for up to 100 scans a day of your own.
+              You get {globalLimit} free page scans and 1 competitor comparison a day.
+              Rescanning a page after you fix it is free (twice a day per page).
+              Resets at {resetTimeLocal(resetsAt)} your time. Add both of your own free keys
+              for up to 100 scans a day.
             </div>
           )}
         </div>
@@ -241,12 +258,11 @@ export default function InputForm({
             <ToggleBtn pressed={geoMode} onClick={() => setGeoMode(g => !g)}>GEO analysis</ToggleBtn>
           </div>
           <div style={{ ...hintStyle, lineHeight: 1.5 }}>
-            <div>JS rendering: use for sites built with JavaScript (React, Wix, Squarespace). Slower.</div>
-            <div>GEO analysis: also checks whether AI search tools like ChatGPT and Perplexity can read your page.</div>
+            JS rendering for sites built with JavaScript (slower) · GEO checks whether AI search like ChatGPT can read your page
           </div>
         </div>
 
-        <div style={{ padding: '24px 20px 24px' }} className="form-body">
+        <div style={{ padding: '18px 20px 20px' }} className="form-body">
           {blocked && (
             <div
               role="status"
@@ -256,7 +272,7 @@ export default function InputForm({
                 fontSize: '13px', color: '#ff6b75',
               }}
             >
-              Today's free scans are used up.{' '}
+              Today's free page scans are used up{comparisonsLeft > 0 ? ' (you can still run 1 competitor comparison)' : ''}.{' '}
               <button
                 type="button"
                 onClick={() => setActiveTab('apikey')}
@@ -268,6 +284,7 @@ export default function InputForm({
           )}
 
           <form onSubmit={handleSubmit} noValidate>
+            <div className="field-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '0 14px' }}>
             <div style={{ marginBottom: '16px' }}>
               <label htmlFor="url-input" style={labelStyle}>Website URL</label>
               <input
@@ -304,6 +321,7 @@ export default function InputForm({
               />
               <div id="kw-hint" style={hintStyle}>Optional for a page check. Required to find competitors.</div>
             </div>
+            </div>
 
             {formError && (
               <div id="form-error" role="alert" style={{ fontSize: '13px', color: '#ff6b75', marginBottom: '14px' }}>
@@ -330,14 +348,15 @@ export default function InputForm({
               <button
                 type="button"
                 onClick={() => run('competitors')}
-                disabled={disabled}
+                disabled={compareDisabled}
+                title={compareBlocked && !loading ? "You've used today's free competitor comparison." : undefined}
                 style={{
                   background: 'transparent',
-                  color: blocked ? '#8a8a8a' : '#ff6b75',
-                  border: `1px solid ${blocked ? '#333' : 'rgba(230,57,70,0.4)'}`,
+                  color: compareBlocked ? '#8a8a8a' : '#ff6b75',
+                  border: `1px solid ${compareBlocked ? '#333' : 'rgba(230,57,70,0.4)'}`,
                   borderRadius: '8px', padding: '13px', fontWeight: 700, fontSize: '13px',
                   letterSpacing: '0.06em',
-                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  cursor: compareDisabled ? 'not-allowed' : 'pointer',
                   transition: 'all 0.15s',
                 }}
               >
@@ -351,7 +370,7 @@ export default function InputForm({
       {/* ── Tab: Add your own keys ── */}
       <div role="tabpanel" id="panel-apikey" aria-labelledby="tab-apikey" hidden={activeTab !== 'apikey'} style={{ padding: '24px 20px' }}>
         <p style={{ fontSize: '13px', color: 'var(--text-body)', marginBottom: '20px', lineHeight: 1.6 }}>
-          Add both keys (both are free) to skip the shared pool and get up to 100 scans a day of your own.
+          Add both keys (both are free) to get up to 100 scans a day of your own instead of the 3 free ones.
           Keys stay in this browser tab and are sent with each scan over HTTPS.
         </p>
 
@@ -361,7 +380,7 @@ export default function InputForm({
             id="gemini-key"
             type="password"
             autoComplete="off"
-            placeholder="AIzaSy..."
+            placeholder="Paste your Gemini API key"
             value={geminiKey}
             onChange={(e) => setGeminiKey(e.target.value)}
             style={inputStyle}
@@ -381,7 +400,7 @@ export default function InputForm({
             id="serper-key"
             type="password"
             autoComplete="off"
-            placeholder="your serper key..."
+            placeholder="Paste your Serper API key"
             value={serperKey}
             onChange={(e) => setSerperKey(e.target.value)}
             style={inputStyle}
@@ -419,7 +438,7 @@ export default function InputForm({
           {hasOwnKeys
             ? '✓ Both keys look right. Your scans will use your keys: up to 100 scans a day.'
             : (geminiKey.trim() || serperKey.trim())
-              ? 'Add both keys to use your own quota. Until then, scans use the shared pool.'
+              ? 'Add both keys to use your own quota. Until then, scans use your free daily allowance.'
               : ''}
         </div>
       </div>

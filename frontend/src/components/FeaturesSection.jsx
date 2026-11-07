@@ -61,8 +61,8 @@ export default function FeaturesSection() {
   const sectionRef = useReveal()
 
   return (
-    <div ref={sectionRef} style={{ padding: '80px 0' }}>
-      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+    <div ref={sectionRef} style={{ padding: '56px 0' }}>
+      <div style={{ maxWidth: '1088px', margin: '0 auto' }}>
         <div className="reveal" style={{ textAlign: 'center', marginBottom: '48px' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, color: '#e63946', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '16px' }}>
             What we analyze
@@ -87,7 +87,7 @@ export default function FeaturesSection() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
             gap: '1px',
             background: '#1a1a1a',
             borderRadius: '16px',

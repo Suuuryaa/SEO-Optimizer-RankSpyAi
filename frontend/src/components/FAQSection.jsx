@@ -106,8 +106,8 @@ function FAQItem({ q, a }) {
 
 export default function FAQSection() {
   return (
-    <div style={{ padding: '64px 0' }}>
-      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+    <div style={{ padding: '48px 0' }}>
+      <div style={{ maxWidth: '1088px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '48px' }}>
           <h2
             style={{

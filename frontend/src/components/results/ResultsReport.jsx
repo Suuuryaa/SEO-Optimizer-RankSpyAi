@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import GeoScorePanel from './GeoScorePanel'
+import ImageTextPanel from './ImageTextPanel'
 import MetaSuggestPanel from './MetaSuggestPanel'
 import SchemaPanel from './SchemaPanel'
 import RankTracker from '../RankTracker'
@@ -11,6 +12,7 @@ import { analyzeLocalSeo } from '../../api'
 import { scoreBand, verdictFor, sortRecs, whyText, relativeTime } from '../../lib/score'
 
 const TASKS_PREVIEW = 10
+const RANK_TRACKER_ON = import.meta.env.VITE_RANK_TRACKER === 'on'
 
 const STATUS = {
   pass: { color: '#22c55e', label: 'OK' },
@@ -176,6 +178,7 @@ const smallBtn = {
 export default function ResultsReport({ data, headingRef, onRescan, onNewScan, onCopyLink, copied, rescanning }) {
   const tech = data.technical_seo || {}
   const recs = sortRecs(data.recommendations)
+  const freeRescans = typeof data.free_rescans_left === 'number' ? data.free_rescans_left : 0
 
   const [showAllTasks, setShowAllTasks] = useState(false)
   const [localData, setLocalData] = useState(null)
@@ -219,16 +222,27 @@ export default function ResultsReport({ data, headingRef, onRescan, onNewScan, o
           {data.cached === true && (
             <div style={{ fontSize: '12px', color: 'var(--text-body)', marginTop: '6px' }}>
               {data.cached_at ? `Result from ${relativeTime(data.cached_at)}` : 'Saved result'}
-              {' · '}
+            </div>
+          )}
+          {onRescan && (
+            <div className="no-print" style={{ fontSize: '12px', color: 'var(--text-body)', marginTop: '6px' }}>
+              Fixed something?{' '}
               <button
                 type="button"
-                className="no-print"
                 onClick={onRescan}
                 disabled={rescanning}
-                style={{ background: 'none', border: 'none', color: '#ff8a92', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '12px', fontFamily: 'inherit' }}
+                style={{ background: 'none', border: 'none', color: '#ff8a92', fontWeight: 700, textDecoration: 'underline', cursor: rescanning ? 'default' : 'pointer', padding: 0, fontSize: '12px', fontFamily: 'inherit' }}
               >
-                Re-scan
+                {freeRescans > 0 ? 'Rescan for free' : 'Rescan'}
               </button>
+              {' '}
+              <span style={{ color: 'var(--text-muted)' }}>
+                {freeRescans > 0
+                  ? `(${freeRescans} free rescan${freeRescans === 1 ? '' : 's'} of this page left today)`
+                  : typeof data.scans_remaining === 'number'
+                    ? `(uses 1 of your ${data.scans_remaining} scans left today)`
+                    : ''}
+              </span>
             </div>
           )}
         </div>
@@ -414,14 +428,17 @@ export default function ResultsReport({ data, headingRef, onRescan, onNewScan, o
         </div>
       </section>
 
-      {/* ── GEO, then deep crawl ── */}
+      {/* ── Text in images, GEO, then deep crawl ── */}
+      {data.image_text && <ImageTextPanel data={data.image_text} />}
       {data.geo_score && <GeoScorePanel geo={data.geo_score} />}
       {data.deep_crawl && <DeepCrawlPanel data={data.deep_crawl} />}
 
-      {/* ── Rank tracker ── */}
-      <div className="no-print">
-        <RankTracker url={data.url} keyword={data.keyword} />
-      </div>
+      {/* ── Rank tracker (off until accounts exist: its data would be public) ── */}
+      {RANK_TRACKER_ON && (
+        <div className="no-print">
+          <RankTracker url={data.url} keyword={data.keyword} />
+        </div>
+      )}
     </div>
   )
 }

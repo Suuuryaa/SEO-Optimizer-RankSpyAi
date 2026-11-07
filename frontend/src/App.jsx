@@ -7,10 +7,8 @@ import Hero from './components/Hero'
 import InputForm from './components/InputForm'
 import ResultsReport from './components/results/ResultsReport'
 import CompetitorResults from './components/competitors/CompetitorResults'
-import StatsSection from './components/StatsSection'
-import FeaturesSection from './components/FeaturesSection'
 import HowItWorks from './components/HowItWorks'
-import DeepDiveSection from './components/DeepDiveSection'
+import FeatureRows from './components/FeatureRows'
 import ScoreScale from './components/ScoreScale'
 import FAQSection from './components/FAQSection'
 import Footer from './components/Footer'
@@ -98,7 +96,7 @@ function ErrorBanner({ error, onAddKeys }) {
       <span style={{ fontSize: '18px' }} aria-hidden="true">⚠️</span>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: '14px', color: '#f0f0f0', lineHeight: 1.5 }}>{error.message}</div>
-        {error.kind === 'rate_limited' && (
+        {(error.kind === 'rate_limited' || error.kind === 'daily_limit') && (
           <button
             type="button"
             onClick={onAddKeys}
@@ -331,9 +329,7 @@ export default function App() {
 
       <main id="main" tabIndex={-1}>
         <div id="top" />
-        <Hero />
-
-        <div className="page-wrap" style={{ maxWidth: '900px', margin: '0 auto', padding: '0 16px 80px' }}>
+        <Hero>
           <div id="scan" ref={formWrapRef}>
             <InputForm
               onAnalyze={handleAnalyze}
@@ -346,7 +342,9 @@ export default function App() {
               refreshKey={refreshKey}
             />
           </div>
+        </Hero>
 
+        <div className="page-wrap" style={{ maxWidth: '960px', margin: '0 auto', padding: '0 16px' }}>
           {error && <ErrorBanner error={error} onAddKeys={handleAddKeys} />}
 
           {loading && <LoadingOverlay progress={progress} onCancel={handleCancel} />}
@@ -400,19 +398,16 @@ export default function App() {
             </div>
           )}
 
-          <div className="landing no-print">
-            <div style={{ borderTop: '1px solid #1a1a1a', marginTop: '40px' }} />
-            <StatsSection />
-            <div style={{ borderTop: '1px solid #1a1a1a' }} />
-            <section id="features" aria-label="Features"><FeaturesSection /></section>
-            <div style={{ borderTop: '1px solid #1a1a1a' }} />
-            <section id="how-it-works" aria-label="How it works"><HowItWorks /></section>
-            <DeepDiveSection />
-            <div style={{ borderTop: '1px solid #1a1a1a' }} />
-            <section id="score-guide" aria-label="Score guide"><ScoreScale /></section>
-            <div style={{ borderTop: '1px solid #1a1a1a' }} />
-            <section id="faq" aria-label="FAQ"><FAQSection /></section>
-          </div>
+        </div>
+
+        <div className="landing no-print" style={{ maxWidth: '1120px', margin: '0 auto', padding: '0 16px 64px' }}>
+          <section id="features" aria-label="Features"><FeatureRows /></section>
+          <div style={{ borderTop: '1px solid #1a1a1a', marginTop: '40px' }} />
+          <section id="how-it-works" aria-label="How it works"><HowItWorks /></section>
+          <div style={{ borderTop: '1px solid #1a1a1a' }} />
+          <section id="score-guide" aria-label="Score guide"><ScoreScale /></section>
+          <div style={{ borderTop: '1px solid #1a1a1a' }} />
+          <section id="faq" aria-label="FAQ"><FAQSection /></section>
         </div>
       </main>
 

@@ -22,8 +22,8 @@ export default function HowItWorks() {
   const sectionRef = useReveal()
 
   return (
-    <div ref={sectionRef} style={{ padding: '80px 0' }}>
-      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+    <div ref={sectionRef} style={{ padding: '48px 0' }}>
+      <div style={{ maxWidth: '1088px', margin: '0 auto' }}>
         <div className="reveal" style={{ textAlign: 'center', marginBottom: '56px' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, color: '#e63946', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '16px' }}>
             The process
