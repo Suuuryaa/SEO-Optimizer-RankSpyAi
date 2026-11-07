@@ -35,6 +35,11 @@ except Exception as _e:
     logger.warning(f"Scrapling StealthyFetcher unavailable: {_e}")
 
 
+# ONE headless browser at a time across the JS renderer, the Tier-5 stealthy
+# fetcher and deep crawl: Chromium needs 200-300 MB and Railway allows 0.5 GB.
+import threading as _thr
+_BROWSER_SLOT = _thr.BoundedSemaphore(1)
+
 # Minimum HTML size — anything smaller is a JS shell with no real content
 _MIN_HTML_BYTES = 500
 
@@ -69,21 +74,25 @@ def _looks_blocked(html: str) -> bool:
 
 
 def _is_public_url(url: str) -> bool:
-    """True only if every address the host resolves to (IPv4 and IPv6) is public."""
-    import ipaddress, socket
-    from urllib.parse import urlparse
-    host = urlparse(url).hostname or ""
-    if not host:
-        return False
+    """True only if every address the host resolves to (IPv4 and IPv6) is public.
+
+    False when the host can't be resolved (fail closed).
+    """
+    from net_safety import url_is_public
+    return url_is_public(url)
+
+
+def _assert_public(url: str, redirected: bool = False) -> None:
+    """Raise FetchError unless url's host resolves only to public addresses."""
+    from net_safety import url_hosts_public, HostLookupError
     try:
-        infos = socket.getaddrinfo(host, None)
-    except OSError:
-        return True  # unresolvable here: the fetch itself will fail
-    for info in infos:
-        addr = ipaddress.ip_address(info[4][0].split("%")[0])
-        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved or addr.is_unspecified:
-            return False
-    return True
+        ok = url_hosts_public(url)
+    except HostLookupError:
+        raise FetchError("unreachable", "We couldn't find that domain. Check the URL is spelled correctly.")
+    if not ok:
+        if redirected:
+            raise FetchError("blocked", "The page redirected to a private address.")
+        raise FetchError("blocked", "That address points to a private network and can't be scanned.")
 
 
 # Paid proxies: at most ONE paid attempt per scan, within a daily budget each,
@@ -171,6 +180,8 @@ _ZENROWS_API_KEY = _os.environ.get("ZENROWS_API_KEY", "")
 
 def _fetch_with_scraperapi(url):
     """Tier 3: ScraperAPI residential proxy."""
+    if not _is_public_url(url):
+        raise FetchError("blocked", "That address points to a private network and can't be scanned.")
     resp = requests.get("http://api.scraperapi.com",
                         params={"api_key": _SCRAPER_API_KEY, "url": url, "render": "false"}, timeout=25)
     if resp.status_code != 200:
@@ -185,6 +196,8 @@ def _fetch_with_scraperapi(url):
 
 def _fetch_with_zenrows(url):
     """Tier 4: ZenRows residential proxy — fallback if ScraperAPI fails."""
+    if not _is_public_url(url):
+        raise FetchError("blocked", "That address points to a private network and can't be scanned.")
     resp = requests.get("https://api.zenrows.com/v1/",
                         params={"apikey": _ZENROWS_API_KEY, "url": url}, timeout=25)
     if resp.status_code != 200:
@@ -197,10 +210,25 @@ def _fetch_with_zenrows(url):
     return BeautifulSoup(html, "lxml"), html
 
 
-def get_page_soup(url):
+_HTML_TYPES = ("text/html", "application/xhtml+xml")
+_MAX_PAGE_BYTES = 5 * 1024 * 1024
+
+
+def _read_capped(resp) -> bytes:
+    raw = b""
+    for chunk in resp.iter_content(chunk_size=65536):
+        raw += chunk
+        if len(raw) > _MAX_PAGE_BYTES:
+            resp.close()
+            raise FetchError("not_html", "That URL returned more than 5 MB, which is too large to scan.")
+    return raw
+
+
+def _fetch_page(url):
     """
-    5-tier fetch strategy:
-    1. Plain requests
+    5-tier fetch strategy. Returns (soup, html, meta) where meta is
+    {final_url, http_status, x_robots_tag, content_type}.
+    1. Plain requests (every redirect hop checked against private addresses)
     2. Scrapling Fetcher / curl_cffi (TLS impersonation)
     3. ScraperAPI residential proxy (needs SCRAPER_API_KEY secret)
     4. ZenRows residential proxy (needs ZENROWS_API_KEY secret — fallback if ScraperAPI fails)
@@ -220,46 +248,30 @@ def get_page_soup(url):
         "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-Site": "none",
     }
+    other_meta = {"final_url": url, "http_status": None, "x_robots_tag": None, "content_type": None}
 
     tier1_blocked = False
     _t0 = time.time()
     try:
-        resp = requests.get(url, headers=headers, timeout=20, allow_redirects=False, stream=True)
-        # Enforce 5 MB response size cap before reading body
-        raw = b""
-        for chunk in resp.iter_content(chunk_size=65536):
-            raw += chunk
-            if len(raw) > 5 * 1024 * 1024:
-                resp.close()
-                raise Exception("Response exceeds 5 MB size cap")
-        resp._content = raw
-        # Follow redirects manually, validating each hop
+        # Redirects are followed by hand; every hop (the first URL too) must be public
+        current = url
         max_redirects = 5
-        hops = 0
-        while resp.is_redirect and hops < max_redirects:
-            location = resp.headers.get("Location", "")
-            from urllib.parse import urljoin as _urljoin
-            next_url = _urljoin(url, location)
-            from urllib.parse import urlparse as _up2
-            import ipaddress as _ipa2, socket as _sock2
-            _host = _up2(next_url).hostname or ""
-            try:
-                _resolved = _sock2.gethostbyname(_host)
-                _addr = _ipa2.ip_address(_resolved)
-                if _addr.is_private or _addr.is_loopback or _addr.is_link_local:
-                    raise Exception(f"Redirect to private IP blocked: {next_url}")
-            except OSError:
-                pass
-            resp = requests.get(next_url, headers=headers, timeout=20, allow_redirects=False, stream=True)
-            raw = b""
-            for chunk in resp.iter_content(chunk_size=65536):
-                raw += chunk
-                if len(raw) > 5 * 1024 * 1024:
-                    resp.close()
-                    raise Exception("Redirect response exceeds 5 MB size cap")
-            resp._content = raw
-            hops += 1
+        for hop in range(max_redirects + 1):
+            _assert_public(current, redirected=hop > 0)
+            resp = requests.get(current, headers=headers, timeout=20, allow_redirects=False, stream=True)
+            if resp.is_redirect and hop < max_redirects:
+                location = resp.headers.get("Location", "")
+                resp.close()
+                if not location:
+                    break
+                current = urljoin(current, location)   # relative to THIS hop, not the original URL
+                continue
+            break
+        resp._content = _read_capped(resp)
         code = resp.status_code
+        content_type = resp.headers.get("Content-Type", "")
+        meta = {"final_url": current, "http_status": code,
+                "x_robots_tag": resp.headers.get("X-Robots-Tag"), "content_type": content_type or None}
         if code in (401, 403, 429, 503):
             tier1_blocked = True
             logger.info(f"Tier1 got {code} from {url} — escalating to Fetcher")
@@ -269,9 +281,15 @@ def get_page_soup(url):
             raise FetchError("server_error", f"The site returned a server error ({code}).", code)
         elif code >= 400:
             raise FetchError("not_found", f"The page returned HTTP {code}.", code)
+        elif 300 <= code < 400:
+            tier1_blocked = True
+            logger.info(f"Tier1 too many redirects for {url} — escalating to Fetcher")
         else:
+            ctype = content_type.split(";")[0].strip().lower()
+            if ctype and ctype not in _HTML_TYPES:
+                raise FetchError("not_html", f"That URL isn't a web page (it returned {ctype}).")
             # No charset in the header → requests assumes Latin-1 and garbles UTF-8 ("â\x80\x94")
-            if "charset" in resp.headers.get("Content-Type", "").lower():
+            if "charset" in content_type.lower():
                 html = resp.text
             else:
                 html = resp.content.decode(resp.apparent_encoding or "utf-8", errors="replace")
@@ -279,7 +297,7 @@ def get_page_soup(url):
                 tier1_blocked = True
                 logger.info(f"Tier1 got a bot-block page from {url} — escalating to Fetcher")
             elif len(html) >= _MIN_HTML_BYTES:
-                return BeautifulSoup(html, "lxml"), html
+                return BeautifulSoup(html, "lxml"), html, meta
             else:
                 # Too small — may need JS render
                 tier1_blocked = True
@@ -301,70 +319,120 @@ def get_page_soup(url):
         logger.info(f"Tier1 request error for {url}: {e} — escalating to Fetcher")
 
     if not tier1_blocked:
-        return BeautifulSoup("", "lxml"), ""
+        return BeautifulSoup("", "lxml"), "", other_meta
 
     # ── Tier 2: Scrapling Fetcher (curl_cffi) ───────────────────────────────
     if _SCRAPLING_AVAILABLE:
         try:
             logger.info(f"Tier2 Fetcher fetching {url}")
-            return _fetch_with_fetcher(url)
+            return (*_fetch_with_fetcher(url), other_meta)
         except Exception as e:
             logger.info(f"Tier2 Fetcher failed for {url}: {e} — escalating to StealthyFetcher")
 
     # ── Tiers 3–4: ONE paid proxy attempt (first provider with budget left) ─
     paid = [("scraperapi", _SCRAPER_API_KEY, _fetch_with_scraperapi),
             ("zenrows", _ZENROWS_API_KEY, _fetch_with_zenrows)]
-    if time.time() - _t0 < 20:
+    if time.time() - _t0 < 20 and _is_public_url(url):
         for name, key, fetch in paid:
             if not key or not _proxy_budget_ok(name):
                 continue
             try:
                 logger.info(f"Paid tier {name} fetching {url}")
-                return fetch(url)
+                return (*fetch(url), other_meta)
             except Exception as e:
                 logger.info(f"Paid tier {name} failed for {url}: {e} — no further paid attempts")
             break
 
     # ── Tier 5: StealthyFetcher (Playwright headless + Cloudflare solver) ───
+    # Shares the single browser slot with the JS renderer and deep crawl; skipped when busy.
     if _STEALTHY_AVAILABLE and time.time() - _t0 < 20:
-        try:
-            logger.info(f"Tier5 StealthyFetcher fetching {url}")
-            return _fetch_with_stealthy(url)
-        except Exception as e:
-            logger.info(f"Tier5 StealthyFetcher failed for {url}: {e}")
+        if _BROWSER_SLOT.acquire(blocking=False):
+            try:
+                logger.info(f"Tier5 StealthyFetcher fetching {url}")
+                return (*_fetch_with_stealthy(url), other_meta)
+            except Exception as e:
+                logger.info(f"Tier5 StealthyFetcher failed for {url}: {e}")
+            finally:
+                _BROWSER_SLOT.release()
+        else:
+            logger.info(f"Tier5 skipped (browser busy): {url}")
 
     raise FetchError("blocked", "This site blocked our scanner, so we couldn't read the page.")
 
 
 # Keep tenacity retry on top for transient network errors
-get_page_soup = retry(
+_fetch_page = retry(
     stop=stop_after_attempt(2),
     wait=wait_exponential(multiplier=1, min=2, max=6),
     retry=retry_if_not_exception_type(FetchError),
     reraise=True
-)(get_page_soup)
+)(_fetch_page)
 
 
 # One scan = one fetch: /analyze, then the meta, schema and local-SEO panels all
 # ask for the same URL within a minute. Single replica, so a process cache is enough.
-_PAGE_CACHE: dict = {}
+# LRU by total HTML size (24 MB); pages over 2 MB are never cached.
+import threading as _threading
+from collections import OrderedDict as _OrderedDict
+
+_PAGE_CACHE: "_OrderedDict" = _OrderedDict()   # key -> (time, html, meta)
+_PAGE_CACHE_LOCK = _threading.Lock()
 _PAGE_TTL = 15 * 60
-_PAGE_CACHE_MAX = 64
-_fetch_page_uncached = get_page_soup
+_PAGE_CACHE_MAX_BYTES = 24 * 1024 * 1024
+_PAGE_CACHE_ITEM_MAX = 2 * 1024 * 1024
+_page_cache_bytes = 0
+
+
+def _cache_get(key):
+    with _PAGE_CACHE_LOCK:
+        hit = _PAGE_CACHE.get(key)
+        if not hit:
+            return None
+        if time.time() - hit[0] >= _PAGE_TTL:
+            _cache_drop(key)
+            return None
+        _PAGE_CACHE.move_to_end(key)
+        return hit
+
+
+def _cache_drop(key):
+    global _page_cache_bytes
+    old = _PAGE_CACHE.pop(key, None)
+    if old:
+        _page_cache_bytes -= len(old[1])
+
+
+def _cache_put(key, html, meta=None):
+    global _page_cache_bytes
+    if not html or len(html) > _PAGE_CACHE_ITEM_MAX:
+        return
+    with _PAGE_CACHE_LOCK:
+        _cache_drop(key)
+        _PAGE_CACHE[key] = (time.time(), html, meta)
+        _page_cache_bytes += len(html)
+        while _page_cache_bytes > _PAGE_CACHE_MAX_BYTES and _PAGE_CACHE:
+            _cache_drop(next(iter(_PAGE_CACHE)))
 
 
 def get_page_soup(url):
-    """Cached wrapper: returns a fresh soup (callers mutate it) from cached HTML."""
-    now = time.time()
-    hit = _PAGE_CACHE.get(url)
-    if hit and now - hit[0] < _PAGE_TTL:
+    """Cached wrapper: returns a fresh soup from cached HTML, fetching on a miss."""
+    hit = _cache_get(url)
+    if hit:
         return BeautifulSoup(hit[1], "lxml"), hit[1]
-    soup, html = _fetch_page_uncached(url)
-    if html:
-        if len(_PAGE_CACHE) >= _PAGE_CACHE_MAX:
-            _PAGE_CACHE.pop(min(_PAGE_CACHE, key=lambda k: _PAGE_CACHE[k][0]), None)
-        _PAGE_CACHE[url] = (now, html)
+    soup, html, meta = _fetch_page(url)
+    _cache_put(url, html, meta)
     return soup, html
+
+
+def get_page_meta(url):
+    """{final_url, http_status, x_robots_tag, content_type} from the last fetch of url, or None."""
+    hit = _cache_get(url)
+    return hit[2] if hit else None
+
+
+def page_cached(url) -> bool:
+    """True when the raw or rendered page is in the 15-minute cache."""
+    return _cache_get(url) is not None or _cache_get((url, "rendered")) is not None
 
 
 # ── JS rendering for thin pages ──────────────────────────────────────────────
@@ -372,10 +440,7 @@ def get_page_soup(url):
 # (Airbnb served 3 words), render the page in headless Chromium and analyse the
 # rendered DOM instead. One render at a time: Chromium needs 200-300 MB and the
 # Railway free plan allows 0.5 GB per service.
-import threading as _threading
-
 THIN_PAGE_WORDS = 150
-_RENDER_SLOTS = _threading.Semaphore(1)
 _RENDER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 
@@ -388,7 +453,10 @@ def render_page_html(url: str, timeout_ms: int = 15000):
         from playwright.sync_api import sync_playwright
     except ImportError:
         return None
-    if not _RENDER_SLOTS.acquire(timeout=20):
+    hit = _cache_get((url, "rendered"))
+    if hit:
+        return hit[1]
+    if not _BROWSER_SLOT.acquire(timeout=20):
         logger.info(f"render skipped (busy): {url}")
         return None
     host_ok: dict = {}
@@ -428,10 +496,52 @@ def render_page_html(url: str, timeout_ms: int = 15000):
         logger.info(f"render failed for {url}: {exc}")
         return None
     finally:
-        _RENDER_SLOTS.release()
+        _BROWSER_SLOT.release()
     if not html or _looks_blocked(html):
         return None
+    _cache_put((url, "rendered"), html)
     return html
+
+
+# ── Indexability ─────────────────────────────────────────────────────────────
+_ROBOTS_CACHE: dict = {}          # origin -> (time, Protego parser | None)
+_ROBOTS_LOCK = _threading.Lock()
+_ROBOTS_TTL = 15 * 60
+
+
+def robots_txt_allows(url: str, ua: str = "Googlebot") -> bool:
+    """True unless the site's robots.txt disallows `ua` for this URL's path.
+
+    Fetched with per-hop SSRF checks, cached per origin for 15 minutes.
+    Any fetch or parse failure counts as allowed (indexable).
+    """
+    p = urlparse(url)
+    origin = f"{p.scheme}://{p.netloc}"
+    now = time.time()
+    with _ROBOTS_LOCK:
+        hit = _ROBOTS_CACHE.get(origin)
+    if hit and now - hit[0] < _ROBOTS_TTL:
+        parser = hit[1]
+    else:
+        parser = None
+        try:
+            from net_safety import safe_get
+            from protego import Protego
+            resp = safe_get(origin + "/robots.txt", max_bytes=500_000, timeout=8)
+            if resp is not None and resp.status_code == 200:
+                parser = Protego.parse(resp.text)
+        except Exception as exc:
+            logger.info(f"robots.txt check failed for {origin}: {exc}")
+        with _ROBOTS_LOCK:
+            if len(_ROBOTS_CACHE) > 500:
+                _ROBOTS_CACHE.clear()
+            _ROBOTS_CACHE[origin] = (now, parser)
+    if parser is None:
+        return True
+    try:
+        return bool(parser.can_fetch(url, ua))
+    except Exception:
+        return True
 
 
 def _safe_text(value: str, max_len: int = 500) -> str:
@@ -447,18 +557,18 @@ def _safe_text(value: str, max_len: int = 500) -> str:
 
 
 def get_title(soup):
-    """Extract page title."""
+    """Page title, or "" when the page has none."""
     if soup.title:
         return _safe_text(soup.title.get_text(strip=True), max_len=300)
-    return "No title found"
+    return ""
 
 
 def get_meta_description(soup):
-    """Extract meta description."""
-    meta_tag = soup.find("meta", attrs={"name": "description"})
+    """Meta description, or "" when the page has none."""
+    meta_tag = soup.find("meta", attrs={"name": re.compile(r"^description$", re.I)})
     if meta_tag and meta_tag.get("content"):
         return _safe_text(meta_tag["content"], max_len=500)
-    return "No meta description found"
+    return ""
 
 
 def get_h1_tags(soup):
@@ -466,62 +576,146 @@ def get_h1_tags(soup):
     return [tag.get_text(strip=True) for tag in soup.find_all("h1")]
 
 
+_INVISIBLE_PARENTS = frozenset({"script", "style", "noscript", "template", "head"})
+
+
 def get_text_content(soup):
-    """Extract visible text content from page."""
-    # Remove script and style elements
-    for script in soup(["script", "style", "noscript"]):
-        script.decompose()
-    
-    return soup.get_text(separator=" ", strip=True)
+    """Visible page text. Does NOT modify the soup (JSON-LD scripts must survive
+    for the schema check that runs afterwards)."""
+    from bs4.element import NavigableString, Comment, Declaration, Doctype, ProcessingInstruction, CData
+    skip_types = (Comment, Declaration, Doctype, ProcessingInstruction, CData)
+    parts = []
+    for node in soup.find_all(string=True):
+        if not isinstance(node, NavigableString) or isinstance(node, skip_types):
+            continue
+        if any(p.name in _INVISIBLE_PARENTS for p in node.parents):
+            continue
+        t = node.strip()
+        if t:
+            parts.append(t)
+    return " ".join(parts)
+
+
+# ── Keyword matching (v1.1) ──────────────────────────────────────────────────
+import unicodedata as _ud
+
+# Scripts written without spaces between words: Han, Hiragana, Katakana, Thai.
+_NOSPACE_RE = re.compile(r"[぀-ヿㇰ-ㇿ㐀-䶿一-鿿豈-﫿฀-๿]")
+
+
+def _normalise(text: str) -> str:
+    """NFKC + casefold; punctuation, hyphens and underscores become spaces."""
+    text = _ud.normalize("NFKC", text or "").casefold()
+    text = re.sub(r"[^\w\s]|_", " ", text)
+    return " ".join(text.split())
+
+
+def _token_pattern(tok: str) -> str:
+    """A keyword token that also matches its simple plural/singular (s / es)."""
+    forms = {tok}
+    if len(tok) > 3 and tok.endswith("es"):
+        forms.add(tok[:-2])
+    if len(tok) > 2 and tok.endswith("s"):
+        forms.add(tok[:-1])
+    alts = "|".join(re.escape(f) for f in sorted(forms, key=len, reverse=True))
+    return rf"(?:{alts})(?:es|s)?"
+
+
+def _phrase_regex(kw_norm: str):
+    tokens = kw_norm.split()
+    body = r"\s+".join(_token_pattern(t) for t in tokens)
+    return re.compile(rf"(?<!\w){body}(?!\w)")
+
+
+def match_keyword(text, keyword):
+    """How the keyword appears in text: "exact" (whole phrase, word boundaries,
+    plural-tolerant), "all_tokens" (every word present, not as one phrase) or None.
+
+    Text and keyword are NFKC-normalised and casefolded; punctuation and
+    hyphens count as spaces, so "e-commerce" matches "e commerce". Keywords in
+    Chinese/Japanese/Thai script match as substrings.
+    """
+    kw = _normalise(keyword)
+    tx = _normalise(text)
+    if not kw or not tx:
+        return None
+    if _NOSPACE_RE.search(kw):
+        if kw.replace(" ", "") in tx.replace(" ", ""):
+            return "exact"
+        toks = kw.split()
+        if len(toks) > 1 and all(t in tx for t in toks):
+            return "all_tokens"
+        return None
+    if _phrase_regex(kw).search(tx):
+        return "exact"
+    toks = kw.split()
+    if len(toks) > 1 and all(re.search(rf"(?<!\w){_token_pattern(t)}(?!\w)", tx) for t in toks):
+        return "all_tokens"
+    return None
 
 
 def count_words(text):
-    """Count total words in text."""
+    """Words in text: whitespace-separated tokens, plus Chinese/Japanese/Thai
+    characters at 2 characters per word (those scripts don't use spaces)."""
     if not text:
         return 0
-    return len(text.split())
+    nospace_chars = len(_NOSPACE_RE.findall(text))
+    other = _NOSPACE_RE.sub(" ", text)
+    tokens = [t for t in other.split() if any(ch.isalnum() for ch in t)]
+    return len(tokens) + (nospace_chars + 1) // 2
 
 
 def count_keyword(text, keyword):
-    """Count exact keyword matches (case-insensitive)."""
-    if not text or not keyword:
+    """Whole-phrase keyword occurrences (word boundaries, plural-tolerant, case-insensitive)."""
+    kw = _normalise(keyword)
+    tx = _normalise(text)
+    if not kw or not tx:
         return 0
-    return text.lower().count(keyword.lower())
+    if _NOSPACE_RE.search(kw):
+        return tx.replace(" ", "").count(kw.replace(" ", ""))
+    return len(_phrase_regex(kw).findall(tx))
 
 
 def keyword_density(text, keyword):
-    """Calculate keyword density as percentage."""
+    """Share of the page's words taken up by the keyword phrase, in %."""
     total_words = count_words(text)
     if total_words == 0:
         return 0
-    keyword_count = count_keyword(text, keyword)
-    return round((keyword_count / total_words) * 100, 2)
+    words_in_kw = max(1, count_words(keyword))
+    return round((count_keyword(text, keyword) * words_in_kw / total_words) * 100, 2)
+
+
+def _host_key(url: str) -> str:
+    h = (urlparse(url).hostname or "").lower()
+    return h[4:] if h.startswith("www.") else h
 
 
 def get_links(soup, base_url):
     """
-    Categorize all links as internal or external.
-    
+    Categorize all links as internal or external. www. and bare hosts count as
+    the same site; pass the page's final URL (after redirects) as base_url.
+
     Returns:
         tuple: (list of internal links, list of external links)
     """
     internal_links = []
     external_links = []
-    domain = urlparse(base_url).netloc
+    domain = _host_key(base_url)
 
     for tag in soup.find_all("a", href=True):
-        href = tag["href"]
-        
+        href = tag["href"].strip()
+
         # Skip non-http links
         if href.startswith(('#', 'javascript:', 'mailto:', 'tel:')):
             continue
-            
+
         full_url = urljoin(base_url, href)
         parsed_url = urlparse(full_url)
-
-        if parsed_url.netloc == domain:
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+            continue
+        if _host_key(full_url) == domain:
             internal_links.append(full_url)
-        elif parsed_url.netloc:  # Only add if it has a domain
+        else:
             external_links.append(full_url)
 
     return list(set(internal_links)), list(set(external_links))
@@ -549,27 +743,86 @@ def get_images_missing_alt(soup):
 
 
 def keyword_in_title(title, keyword):
-    """Check if keyword appears in title."""
-    if not title or not keyword:
-        return False
-    return keyword.lower() in title.lower()
+    """True when the keyword phrase, or all of its words, appear in the title."""
+    return match_keyword(title, keyword) is not None
 
 
 def keyword_in_meta(meta_description, keyword):
-    """Check if keyword appears in meta description."""
-    if not meta_description or not keyword:
-        return False
-    return keyword.lower() in meta_description.lower()
+    """True when the keyword phrase, or all of its words, appear in the meta description."""
+    return match_keyword(meta_description, keyword) is not None
+
+
+def best_h1_match(h1_tags, keyword):
+    """Best keyword match level across all H1s: "exact" > "all_tokens" > None."""
+    best = None
+    for h1 in h1_tags or []:
+        m = match_keyword(h1, keyword)
+        if m == "exact":
+            return m
+        best = best or m
+    return best
 
 
 def keyword_in_h1(h1_tags, keyword):
-    """Check if keyword appears in any H1 tag."""
-    if not keyword:
-        return False
-    for h1 in h1_tags:
-        if keyword.lower() in h1.lower():
-            return True
-    return False
+    """True when any H1 contains the keyword phrase or all of its words."""
+    return best_h1_match(h1_tags, keyword) is not None
+
+
+# ── Indexability gate ────────────────────────────────────────────────────────
+
+def _norm_for_compare(url: str) -> str:
+    """Scheme, www., trailing slash and fragment don't make a different page."""
+    p = urlparse(url.strip())
+    host = (p.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = p.path.rstrip("/") or ""
+    return f"{host}{(':' + str(p.port)) if p.port else ''}{path}" + (f"?{p.query}" if p.query else "")
+
+
+def _robots_tokens(content: str) -> set:
+    out = set()
+    for token in (content or "").lower().split(","):
+        token = token.strip()
+        if ":" in token and not token.startswith(("max-", "unavailable_after")):
+            token = token.split(":", 1)[1].strip()        # "googlebot: noindex"
+        out.add(token)
+    return out
+
+
+def check_indexability(url, soup, meta=None):
+    """Can Google index this page? Returns {indexable, reasons, canonical_url}.
+
+    Reasons: meta robots noindex, X-Robots-Tag noindex, robots.txt blocking
+    Googlebot for this path, or a canonical pointing at a different URL.
+    """
+    meta = meta or {}
+    final_url = meta.get("final_url") or url
+    reasons = []
+
+    for tag in soup.find_all("meta", attrs={"name": re.compile(r"^(robots|googlebot)$", re.I)}):
+        if _robots_tokens(tag.get("content")) & {"noindex", "none"}:
+            reasons.append({"code": "meta_noindex",
+                            "detail": f'The page has <meta name="{tag.get("name")}" content="{tag.get("content")}">.'})
+            break
+
+    xrt = meta.get("x_robots_tag")
+    if xrt and _robots_tokens(xrt) & {"noindex", "none"}:
+        reasons.append({"code": "x_robots_noindex", "detail": f"The server sends X-Robots-Tag: {xrt}."})
+
+    if not robots_txt_allows(final_url, "Googlebot"):
+        reasons.append({"code": "robots_txt_blocked",
+                        "detail": "The site's robots.txt blocks Googlebot from this page."})
+
+    canonical_url = None
+    link = soup.find("link", rel=lambda v: v and "canonical" in (v if isinstance(v, list) else str(v).split()))
+    if link and link.get("href"):
+        canonical_url = urljoin(final_url, link["href"].strip())
+        if _norm_for_compare(canonical_url) != _norm_for_compare(final_url):
+            reasons.append({"code": "canonical_elsewhere",
+                            "detail": f"The canonical tag points to a different page: {canonical_url}"})
+
+    return {"indexable": not reasons, "reasons": reasons, "canonical_url": canonical_url}
 
 
 def title_length(title):
@@ -639,10 +892,30 @@ def keyword_token_coverage(text, keyword):
 
 # ==================== ENHANCED FEATURES ====================
 
+def _jsonld_types(data, out: list) -> None:
+    """Collect every @type from a JSON-LD value: top-level lists and @graph are flattened."""
+    if isinstance(data, list):
+        for item in data:
+            _jsonld_types(item, out)
+        return
+    if not isinstance(data, dict):
+        return
+    t = data.get("@type")
+    if isinstance(t, str):
+        out.append(t)
+    elif isinstance(t, list):
+        out.extend(str(x) for x in t if isinstance(x, (str, int)))
+    if "@graph" in data:
+        _jsonld_types(data["@graph"], out)
+
+
 def detect_schema_markup(soup):
     """
     Detect structured data (JSON-LD, Microdata, RDFa).
-    
+
+    Each JSON-LD block is parsed on its own, so one broken block doesn't hide
+    the others or the microdata/RDFa found on the page.
+
     Returns:
         dict: Schema types found in each format
     """
@@ -651,30 +924,28 @@ def detect_schema_markup(soup):
         'microdata': [],
         'rdfa': []
     }
-    
+
+    for script in soup.find_all('script', attrs={'type': lambda t: t and 'ld+json' in t.lower()}):
+        try:
+            raw = script.string if script.string is not None else script.get_text()
+            if not raw or not raw.strip():
+                continue
+            data = json.loads(raw)
+            types: list = []
+            _jsonld_types(data, types)
+            schemas['json_ld'].extend(types or ['Unknown'])
+        except Exception:
+            continue
+
     try:
-        # JSON-LD
-        json_ld_scripts = soup.find_all('script', type='application/ld+json')
-        for script in json_ld_scripts:
-            if script.string:
-                try:
-                    data = json.loads(script.string)
-                    schema_type = data.get('@type', 'Unknown')
-                    schemas['json_ld'].append(schema_type)
-                except json.JSONDecodeError:
-                    pass
-        
-        # Microdata
-        microdata = soup.find_all(attrs={'itemtype': True})
-        schemas['microdata'] = [tag.get('itemtype') for tag in microdata]
-        
-        # RDFa
-        rdfa = soup.find_all(attrs={'typeof': True})
-        schemas['rdfa'] = [tag.get('typeof') for tag in rdfa]
-        
+        schemas['microdata'] = [tag.get('itemtype') for tag in soup.find_all(attrs={'itemtype': True})]
     except Exception as e:
-        logger.warning(f"Error detecting schema markup: {e}")
-    
+        logger.warning(f"Error detecting microdata: {e}")
+    try:
+        schemas['rdfa'] = [tag.get('typeof') for tag in soup.find_all(attrs={'typeof': True})]
+    except Exception as e:
+        logger.warning(f"Error detecting RDFa: {e}")
+
     return schemas
 
 
@@ -748,7 +1019,7 @@ def check_technical_seo(url, soup):
         
     except Exception as e:
         logger.error(f"Error in technical SEO check: {e}")
-        checks['error'] = str(e)
+        checks['error'] = "Technical check failed"
     
     return checks
 

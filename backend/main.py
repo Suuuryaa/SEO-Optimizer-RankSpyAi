@@ -37,7 +37,6 @@ from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from starlette.middleware.base import BaseHTTPMiddleware
 from typing import Optional
 
 from config import active_keys, GLOBAL_LIMIT, ADMIN_SECRET
@@ -58,7 +57,7 @@ TRACK_DAILY_LIMIT  = int(os.getenv("TRACK_DAILY_LIMIT", "10"))
 def _quota_gate(request: Request, bucket: str, limit: int) -> None:
     if not check_ip_quota(_client_ip(request), bucket, limit):
         raise HTTPException(status_code=429, detail="Daily limit reached for this feature. Try again tomorrow.")
-from rate_limiter import check_and_consume, get_global_uses, get_remaining
+from rate_limiter import check_and_consume, get_global_uses, get_remaining, refund
 from models import (
     AnalyzeRequest, AnalyzeResponse,
     CompetitorsRequest, CompetitorsResponse,
@@ -71,15 +70,17 @@ from models import (
 from bs4 import BeautifulSoup
 from seo_utils import (
     FetchError, render_page_html, THIN_PAGE_WORDS,
-    get_page_soup, get_title, get_meta_description, get_h1_tags,
+    get_page_soup, get_page_meta, page_cached, get_title, get_meta_description, get_h1_tags,
     get_text_content, count_words, count_keyword, keyword_density,
     get_links, get_images_missing_alt, keyword_in_title, keyword_in_meta,
     keyword_in_h1, title_length, meta_description_length,
     check_technical_seo, analyze_content_quality, has_schema_markup,
+    match_keyword, best_h1_match, check_indexability,
 )
-from scoring import calculate_seo_score, get_score_band
+from scoring import calculate_seo_score, get_score_band, SCORING_VERSION
 from summary_utils import get_executive_summary, generate_ai_executive_summary
-from leaderboard_utils import analyze_venue
+from leaderboard_utils import analyze_venue, row_error
+from location_utils import get_location_from_url
 from comparison_utils import compare_metric
 from pagespeed_utils import get_pagespeed_data
 from competitor_utils import get_competitors_via_gemini, filter_direct_competitors
@@ -87,9 +88,8 @@ from serp_utils import progressive_competitor_search
 from insight_utils import generate_strategic_insights
 from geo_utils import (
     check_ai_crawlers, score_citability, check_llmstxt,
-    check_eeat, calculate_geo_score,
+    check_eeat, calculate_geo_score, check_snippet_controls,
 )
-from ai.semantic import semantic_keyword_score
 from ai.meta_gen import generate_meta_suggestions
 from ai.schema_gen import generate_schema
 from ai.content_brief import generate_content_brief
@@ -111,24 +111,85 @@ app = FastAPI(
 )
 
 # ── Security headers middleware ───────────────────────────────────────────────
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"]  = "nosniff"
-        response.headers["X-Frame-Options"]          = "DENY"
-        response.headers["Referrer-Policy"]          = "strict-origin-when-cross-origin"
-        response.headers["X-XSS-Protection"]         = "1; mode=block"
-        return response
+class SecurityHeadersMiddleware:
+    """Plain ASGI (not BaseHTTPMiddleware, whose task group wraps errors raised
+    while the body is read, e.g. the 413 below, into an ExceptionGroup)."""
+    _HEADERS = [
+        (b"x-content-type-options", b"nosniff"),
+        (b"x-frame-options", b"DENY"),
+        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+        (b"x-xss-protection", b"1; mode=block"),
+    ]
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                names = {h[0] for h in self._HEADERS}
+                message["headers"] = [h for h in message.get("headers", []) if h[0].lower() not in names] + self._HEADERS
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 # ── Body size limit (1 MB) ────────────────────────────────────────────────────
-class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+class _BodyTooLarge(HTTPException):
+    """Raised from the counting receive(); an HTTPException so FastAPI's body
+    parser re-raises it instead of turning it into a 400."""
+
+    def __init__(self):
+        super().__init__(status_code=413, detail="Payload too large")
+
+
+class MaxBodySizeMiddleware:
+    """Rejects bodies over 1 MB: by Content-Length up front, and by counting the
+    bytes actually received (chunked uploads have no Content-Length)."""
     _LIMIT = 1_000_000  # 1 MB
 
-    async def dispatch(self, request: Request, call_next):
-        cl = request.headers.get("content-length")
-        if cl and int(cl) > self._LIMIT:
-            return JSONResponse(status_code=413, content={"detail": "Payload too large"})
-        return await call_next(request)
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        cl = dict(scope.get("headers") or []).get(b"content-length")
+        if cl is not None:
+            try:
+                size = int(cl)
+                if size < 0:
+                    raise ValueError
+            except ValueError:
+                return await JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})(scope, receive, send)
+            if size > self._LIMIT:
+                return await JSONResponse(status_code=413, content={"detail": "Payload too large"})(scope, receive, send)
+
+        received = 0
+        started = False
+
+        async def counting_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self._LIMIT:
+                    raise _BodyTooLarge()
+            return message
+
+        async def tracking_send(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, counting_receive, tracking_send)
+        except _BodyTooLarge:
+            if not started:
+                await JSONResponse(status_code=413, content={"detail": "Payload too large"})(scope, receive, send)
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(MaxBodySizeMiddleware)
@@ -145,20 +206,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
-
-
-@app.on_event("startup")
-async def warmup_hf():
-    """Pre-warm HuggingFace models in background — avoids cold-start delay."""
-    import threading
-    def _warm():
-        try:
-            from ai.semantic import _embed
-            _embed(["warmup"])
-            logger.info("HuggingFace MiniLM warmed up")
-        except Exception as e:
-            logger.warning(f"HF warmup failed: {e}")
-    threading.Thread(target=_warm, daemon=True).start()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -196,7 +243,9 @@ def _client_ip(request: Request) -> str:
     except ValueError:
         behind_railway = False
     if behind_railway:
-        fwd = (request.headers.get("X-Real-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0]).strip()
+        # Railway's proxy overwrites X-Real-IP; X-Forwarded-For is client-controlled
+        # (its first entry can be forged), so it is never trusted.
+        fwd = (request.headers.get("X-Real-IP") or "").strip()
         try:
             _ipaddr.ip_address(fwd)
             return fwd
@@ -254,10 +303,17 @@ def _gate(user_api_keys, request: Request) -> dict:
     result = check_and_consume(user_has_own_keys=own)
     if not result["allowed"]:
         raise HTTPException(status_code=429, detail=result["message"])
+    result["pooled"] = not own
     return result
 
 
-def _google_positions(keyword: str, urls: list[str], serper_key: str):
+def _refund(gate: dict) -> None:
+    """Give a pool credit back when the scanned page itself couldn't be read."""
+    if gate and gate.get("pooled"):
+        refund()
+
+
+def _google_positions(keyword: str, urls: list[str], serper_key: str, gl: str = "us", hl: str | None = None):
     """Organic Google position (top ~30) per URL's site for `keyword`.
 
     Returns {url: position | None (not in top 30)}, or None when the search
@@ -274,7 +330,7 @@ def _google_positions(keyword: str, urls: list[str], serper_key: str):
 
     from rank_tracker import serp_organic_links
     try:
-        links = serp_organic_links(keyword, serper_key)
+        links = serp_organic_links(keyword, serper_key, gl=gl, hl=hl)
     except Exception as exc:
         logger.warning(f"google position lookup failed: {exc}")
         return None
@@ -289,8 +345,12 @@ def _google_positions(keyword: str, urls: list[str], serper_key: str):
 def _analysis_http_error(exc: Exception) -> HTTPException:
     """Tell the user what happened when the page itself was the problem."""
     if isinstance(exc, FetchError):
-        return HTTPException(status_code=422, detail=str(exc))
-    return HTTPException(status_code=502, detail="Analysis failed. Please try again.")
+        err = HTTPException(status_code=422, detail=str(exc))
+        err.error_kind = exc.kind
+        return err
+    err = HTTPException(status_code=502, detail="Analysis failed. Please try again.")
+    err.error_kind = "internal"
+    return err
 
 
 async def _run(fn, *args):
@@ -300,61 +360,69 @@ async def _run(fn, *args):
 
 
 def _sanitize_input(v: str, max_len: int = 200) -> str:
-    """Strip HTML tags and control chars from any user-supplied string before echoing."""
-    from html import escape as _escape
+    """Strip HTML tags and control chars from a user-supplied string before echoing.
+
+    Not HTML-escaped: React escapes on render, and escaping here showed "&amp;" to users.
+    """
     import re as _re
     v = _re.sub(r'[\x00-\x1f\x7f]', '', v)   # control chars
     v = _re.sub(r'<[^>]+>', '', v)             # strip HTML tags
-    return _escape(v.strip())[:max_len]
+    return v.strip()[:max_len]
 
 
 def _full_seo_analysis(url: str, keyword: str, keys: dict) -> dict:
     """Full synchronous SEO pipeline — runs in executor."""
     soup, _ = get_page_soup(url)
+    meta = get_page_meta(url) or {}
+    final_url = meta.get("final_url") or url
 
     # Thin plain HTML (a JavaScript app shell): analyse the rendered page instead
     rendered_js = False
-    raw_words = count_words(get_text_content(BeautifulSoup(str(soup), "lxml")))
+    raw_words = count_words(get_text_content(soup))
     if raw_words < THIN_PAGE_WORDS:
         html = render_page_html(url)
         if html:
             rendered = BeautifulSoup(html, "lxml")
-            if count_words(get_text_content(BeautifulSoup(html, "lxml"))) > raw_words:
+            if count_words(get_text_content(rendered)) > raw_words:
                 soup, rendered_js = rendered, True
                 logger.info(f"rendered with JS: {url} ({raw_words} words in plain HTML)")
 
     title    = get_title(soup)
-    meta     = get_meta_description(soup)
+    meta_d   = get_meta_description(soup)
     h1       = get_h1_tags(soup)
     text     = get_text_content(soup)
     wc       = count_words(text)
     kc       = count_keyword(text, keyword)
     kd       = keyword_density(text, keyword)
-    internal, external = get_links(soup, url)
+    internal, external = get_links(soup, final_url)
     missing  = get_images_missing_alt(soup)
-    tkw      = keyword_in_title(title, keyword)
-    mkw      = keyword_in_meta(meta, keyword)
-    hkw      = keyword_in_h1(h1, keyword)
+    t_match  = match_keyword(title, keyword)
+    m_match  = match_keyword(meta_d, keyword)
+    h_match  = best_h1_match(h1, keyword)
     tlen     = title_length(title)
-    mlen     = meta_description_length(meta)
-    tech     = check_technical_seo(url, soup)
-    schema   = has_schema_markup(soup)
+    mlen     = meta_description_length(meta_d)
+    tech     = check_technical_seo(final_url, soup)
+    schema   = tech.get("has_schema", False)
     cq       = analyze_content_quality(text)
 
     # A page with no title and almost no text is a block page or an unrendered
     # shell, not the site — report that instead of scoring it (amazon.com scored 20).
-    if title in ("", "No title found") and wc < 30:
+    if not title and wc < 30:
         raise FetchError("blocked", "We couldn't read any content on this page. The site may block "
                                     "scanners, or the page may need JS rendering mode.")
 
-    score, recs = calculate_seo_score(
-        title, meta, h1, kc, wc, len(missing),
-        tkw, mkw, hkw, tlen, mlen,
+    indexability = check_indexability(url, soup, meta)
+
+    score, recs, score_uncapped, stuffing = calculate_seo_score(
+        title, meta_d, h1, kc, wc, len(missing),
+        t_match, m_match, h_match, tlen, mlen,
         internal_links_count=len(internal),
         external_links_count=len(external),
         has_schema=schema,
         https_enabled=tech.get("https_enabled", False),
         mobile_viewport=tech.get("mobile_viewport", False),
+        keyword_density_pct=kd,
+        indexability=indexability,
     )
 
     summary_raw = get_executive_summary(score, kc, len(missing), wc)
@@ -368,13 +436,21 @@ def _full_seo_analysis(url: str, keyword: str, keys: dict) -> dict:
 
     return {
         "url": url, "keyword": _sanitize_input(keyword),
-        "title": title, "meta_description": meta,
+        "final_url": final_url, "http_status": meta.get("http_status"),
+        "scoring_version": SCORING_VERSION,
+        "title": title, "meta_description": meta_d,
+        "has_title": bool(title), "has_meta_description": bool(meta_d),
         "h1_tags": h1, "word_count": wc, "keyword_count": kc,
-        "keyword_density": kd, "internal_links": len(internal),
+        "keyword_density": kd, "keyword_stuffing": stuffing,
+        "keyword_match": {"title": t_match, "h1": h_match, "meta": m_match},
+        "internal_links": len(internal),
         "external_links": len(external), "missing_alt": len(missing),
-        "keyword_in_title": tkw, "keyword_in_meta": mkw, "keyword_in_h1": hkw,
+        "keyword_in_title": t_match is not None, "keyword_in_meta": m_match is not None,
+        "keyword_in_h1": h_match is not None,
         "title_length": tlen, "meta_length": mlen,
-        "seo_score": score, "score_band": get_score_band(score),
+        "seo_score": score, "seo_score_uncapped": score_uncapped,
+        "score_band": get_score_band(score),
+        "indexability": indexability,
         "recommendations": recs, "technical_seo": tech,
         "content_quality": cq,
         "rendered_js": rendered_js,
@@ -386,6 +462,7 @@ def _full_seo_analysis(url: str, keyword: str, keys: dict) -> dict:
         },
         "_soup": soup,
         "_text": text,
+        "_x_robots_tag": meta.get("x_robots_tag"),
     }
 
 
@@ -429,15 +506,22 @@ class ContentBriefRequest(BaseModel):
 # A scan can take 20-60 s, and Railway's proxy cuts any single request at 60 s.
 # POST /jobs/... returns a job id at once; the scan runs as a task that records
 # its current step; the page polls GET /jobs/{id}. Jobs live in this process
-# (one replica) and are forgotten 15 minutes after they finish.
+# (one replica) and are forgotten 10 minutes after they finish.
 import contextvars
 import time as _time
 import uuid
 
 _JOBS: dict[str, dict] = {}
-_JOB_TTL = 15 * 60
+_JOB_TTL = 10 * 60
+_JOB_TIMEOUT = 200            # seconds a scan may run before it is stopped
+_JOBS_PER_IP = 2              # queued + running per visitor
+_JOBS_UNFINISHED_MAX = 30     # queued + running in total
+_JOBS_STORED_MAX = 100        # kept in memory, finished ones included
+_JOB_TASKS: set = set()       # strong refs so running tasks aren't garbage-collected
 _JOB_SLOTS = asyncio.Semaphore(int(os.getenv("MAX_PARALLEL_SCANS", "3")))
 _current_job: contextvars.ContextVar = contextvars.ContextVar("current_job", default=None)
+
+_STATUS_KINDS = {429: "rate_limited", 503: "busy", 422: "invalid_input", 504: "timeout"}
 
 
 def _step(label: str) -> None:
@@ -452,6 +536,11 @@ def _purge_jobs() -> None:
     now = _time.time()
     for jid in [j for j, v in _JOBS.items() if v.get("finished") and now - v["finished"] > _JOB_TTL]:
         _JOBS.pop(jid, None)
+    # Over the stored cap: drop the oldest finished jobs first
+    if len(_JOBS) >= _JOBS_STORED_MAX:
+        finished = sorted((v["finished"], j) for j, v in _JOBS.items() if v.get("finished"))
+        for _, jid in finished[: len(_JOBS) - _JOBS_STORED_MAX + 1]:
+            _JOBS.pop(jid, None)
 
 
 async def _run_job(job: dict, make_coro) -> None:
@@ -459,28 +548,64 @@ async def _run_job(job: dict, make_coro) -> None:
     async with _JOB_SLOTS:
         job["status"] = "running"
         try:
-            result = await make_coro()
+            result = await asyncio.wait_for(make_coro(), timeout=_JOB_TIMEOUT)
             job["result"] = result.model_dump() if hasattr(result, "model_dump") else result
             job["status"] = "done"
+        except asyncio.TimeoutError:
+            job.update(status="error", error="The scan took too long and was stopped. Please try again.",
+                       status_code=504, error_kind="timeout")
+        except FetchError as exc:
+            job.update(status="error", error=str(exc), status_code=422, error_kind=exc.kind)
         except HTTPException as exc:
-            job.update(status="error", error=str(exc.detail), status_code=exc.status_code)
+            kind = getattr(exc, "error_kind", None) or _STATUS_KINDS.get(exc.status_code, "internal")
+            job.update(status="error", error=str(exc.detail), status_code=exc.status_code, error_kind=kind)
         except Exception as exc:
             logger.error(f"job {job['id']} failed: {exc}", exc_info=True)
-            job.update(status="error", error="Scan failed. Please try again.", status_code=500)
+            job.update(status="error", error="Scan failed. Please try again.", status_code=500,
+                       error_kind="internal")
         finally:
             job["finished"] = _time.time()
 
 
-def _start_job(kind: str, make_coro) -> dict:
+def _job_ip_bucket(ip: str) -> str:
+    """One visitor = one IPv4 address or one IPv6 /64 (a single host usually owns a whole /64)."""
+    try:
+        addr = _ipaddr.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6:
+        if addr.ipv4_mapped is not None:
+            return str(addr.ipv4_mapped)
+        return str(_ipaddr.ip_network(f"{addr}/64", strict=False))
+    return str(addr)
+
+
+def _start_job(kind: str, make_coro, ip: str = "unknown") -> dict:
     _purge_jobs()
-    if len(_JOBS) > 500:
+    ip = _job_ip_bucket(ip)
+    unfinished = [j for j in _JOBS.values() if j["status"] in ("queued", "running")]
+    if sum(1 for j in unfinished if j.get("ip") == ip) >= _JOBS_PER_IP:
+        raise HTTPException(status_code=429, detail="You already have 2 scans running. Wait for one to finish.")
+    if len(unfinished) >= _JOBS_UNFINISHED_MAX or len(_JOBS) >= _JOBS_STORED_MAX:
         raise HTTPException(status_code=503, detail="The server is busy. Please try again in a minute.")
     jid = uuid.uuid4().hex
     job = {"id": jid, "kind": kind, "status": "queued", "step": "Waiting to start", "steps": [],
-           "created": _time.time(), "finished": None}
+           "created": _time.time(), "finished": None, "ip": ip}
     _JOBS[jid] = job
-    asyncio.create_task(_run_job(job, make_coro))
+    task = asyncio.create_task(_run_job(job, make_coro))
+    _JOB_TASKS.add(task)
+    task.add_done_callback(_JOB_TASKS.discard)
     return {"job_id": jid, "status": "queued"}
+
+
+async def _helper_gate(url: str, request: Request):
+    """Meta/schema/local-SEO panels: per-IP helper quota always. When the page is
+    still in the 15-minute page cache (normally from the scan just run) that's
+    all; otherwise the fetch costs one pool credit like a scan."""
+    await _run(_quota_gate, request, "helpers", HELPER_DAILY_LIMIT)
+    if page_cached(url):
+        return None
+    return await _run(_gate, None, request)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -498,7 +623,8 @@ def health():
 @app.post("/admin/reset-pool")
 def admin_reset_pool(x_admin_key: Optional[str] = Header(None)):
     """Reset the global usage pool. Called by daily GitHub Actions cron."""
-    if not ADMIN_SECRET or x_admin_key != ADMIN_SECRET:
+    import hmac
+    if not ADMIN_SECRET or not x_admin_key or not hmac.compare_digest(x_admin_key.encode(), ADMIN_SECRET.encode()):
         raise HTTPException(status_code=403, detail="Forbidden")
     from rate_limiter import _redis_set
     _redis_set("global:uses", "0")
@@ -518,19 +644,24 @@ def rate_status(request: Request):
     }
 
 
-@app.post("/analyze")
 async def analyze(req: AnalyzeRequest, request: Request):
-    gate = _gate(req.user_api_keys, request)
-    keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
-
-    # ── Check result cache first ──────────────────────────────────────────────
     js_mode = req.crawl_mode == "javascript"
-    cached = get_cached(req.url, req.keyword)
-    if cached and not req.geo and not req.pagespeed and not js_mode:
-        logger.info(f"/analyze cache HIT: {req.url}")
-        cached["pool_uses"]      = gate["uses"]
-        cached["pool_remaining"] = gate["remaining"]
-        return cached
+
+    # ── Result cache first: a hit costs no pool credit ───────────────────────
+    # fresh=true skips the cache (and is charged); GEO/PageSpeed/JS scans are never cached.
+    cacheable = not (req.fresh or req.geo or req.pagespeed or js_mode)
+    if cacheable:
+        cached = await _run(get_cached, req.url, req.keyword)
+        if cached:
+            logger.info(f"/analyze cache HIT: {req.url}")
+            uses = await _run(get_global_uses)
+            cached["cached"]         = True
+            cached["pool_uses"]      = uses
+            cached["pool_remaining"] = max(0, GLOBAL_LIMIT - uses)
+            return cached
+
+    gate = await _run(_gate, req.user_api_keys, request)
+    keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     # ── Run analysis pipeline ─────────────────────────────────────────────────
     _step("Fetching and reading the page")
@@ -538,6 +669,8 @@ async def analyze(req: AnalyzeRequest, request: Request):
         result = await _run(_full_seo_analysis, req.url, req.keyword, keys)
     except Exception as exc:
         logger.error(f"/analyze error for {req.url}: {exc}")
+        if isinstance(exc, FetchError):
+            await _run(_refund, gate)
         raise _analysis_http_error(exc)
 
     # ── Deep Playwright crawl (JS mode) ───────────────────────────────────────
@@ -546,37 +679,30 @@ async def analyze(req: AnalyzeRequest, request: Request):
         try:
             logger.info(f"/analyze deep crawl: {req.url}")
             crawl_data = await deep_crawl(req.url)
+            combined = crawl_data.pop("_combined_text", "")
             if "error" not in crawl_data:
-                # Enrich with HF keyphrases across all discovered content
-                combined = crawl_data.get("combined_text", "")
+                # Keyphrases across all discovered content; the text itself is never returned
                 if combined:
-                    kp = await _run(extract_keyphrases, combined)
-                    crawl_data["keyphrases"] = kp
+                    crawl_data["keyphrases"] = await _run(extract_keyphrases, combined)
                 result["deep_crawl"] = crawl_data
-                # Boost word count with JS-rendered text
-                if combined:
-                    from seo_utils import count_words as _cw
-                    result["word_count"] = max(result.get("word_count", 0), _cw(combined))
+            else:
+                result["deep_crawl"] = {"error": crawl_data["error"]}
         except Exception as exc:
             logger.warning(f"/analyze deep crawl error: {exc}")
             result["deep_crawl"] = {"error": "Deep crawl failed"}
 
     soup = result.pop("_soup")
-    text = result.pop("_text")
-
-    # ── Semantic score (HF MiniLM) — runs parallel to GEO/PageSpeed ──────────
-    semantic_task = asyncio.create_task(
-        _run(semantic_keyword_score, text, req.keyword)
-    )
+    result.pop("_text")
 
     # ── GEO analysis ──────────────────────────────────────────────────────────
     if req.geo:
         _step("Checking AI visibility (GEO)")
         try:
-            crawler_data    = await _run(check_ai_crawlers, req.url)
+            crawler_data    = await _run(check_ai_crawlers, result.get("final_url") or req.url)
             citability_data = await _run(score_citability, soup)
             llmstxt_data    = await _run(check_llmstxt, req.url)
-            eeat_data       = await _run(check_eeat, soup, req.url)
+            eeat_data       = await _run(check_eeat, soup, result.get("final_url") or req.url)
+            snippet         = await _run(check_snippet_controls, soup, result.pop("_x_robots_tag", None))
             has_schema      = result["technical_seo"].get("has_schema", False)
             geo             = calculate_geo_score(
                 crawler_score=crawler_data["score"],
@@ -587,16 +713,19 @@ async def analyze(req: AnalyzeRequest, request: Request):
             )
             result["geo_score"] = {**geo, "crawlers": crawler_data,
                                    "citability": citability_data,
-                                   "llmstxt": llmstxt_data, "eeat": eeat_data}
+                                   "llmstxt": llmstxt_data, "eeat": eeat_data,
+                                   "snippet_controls": snippet["snippet_controls"],
+                                   "recommendations": snippet["recommendations"]}
         except Exception as exc:
             logger.warning(f"/analyze GEO error: {exc}")
             result["geo_score"] = {"error": "GEO analysis failed"}
+    result.pop("_x_robots_tag", None)
 
     # ── PageSpeed ─────────────────────────────────────────────────────────────
     if req.pagespeed:
         _step("Running Google PageSpeed")
         if not keys["pagespeed"]:
-            result["pagespeed"] = {"error": "PAGESPEED_API_KEY not configured."}
+            result["pagespeed"] = {"error": "PageSpeed isn't available right now."}
         else:
             try:
                 result["pagespeed"] = await _run(
@@ -606,30 +735,27 @@ async def analyze(req: AnalyzeRequest, request: Request):
                 logger.warning(f"/analyze PageSpeed error: {exc}")
                 result["pagespeed"] = {"error": "PageSpeed analysis failed"}
 
-    # ── Await semantic score ──────────────────────────────────────────────────
-    try:
-        result["semantic"] = await semantic_task
-    except Exception as exc:
-        logger.warning(f"/analyze semantic error: {exc}")
-        result["semantic"] = {"semantic_score": None, "hf_available": False}
-
     result["pool_uses"]      = gate["uses"]
     result["pool_remaining"] = gate["remaining"]
+    result["cached"]         = False
+    result["cached_at"]      = None
 
-    # Cache result (no GEO/PageSpeed/deep crawl to keep cache clean)
+    # Cache plain scans only (fresh scans refresh the cached copy)
     if not req.geo and not req.pagespeed and not js_mode:
-        set_cached(req.url, req.keyword, result)
+        await _run(set_cached, req.url, req.keyword, result)
 
     return result
 
 
-@app.post("/competitors")
 async def competitors(req: CompetitorsRequest, request: Request):
-    gate = _gate(req.user_api_keys, request)
+    gate = await _run(_gate, req.user_api_keys, request)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     if not keys["serper"]:
         raise HTTPException(status_code=400, detail="SERPER_API_KEY is required.")
+
+    location = get_location_from_url(req.url)
+    gl, hl = location["serper_gl"], location.get("serper_hl")
 
     # Primary analysis
     _step("Analysing your page")
@@ -637,9 +763,12 @@ async def competitors(req: CompetitorsRequest, request: Request):
         primary_raw = await _run(_full_seo_analysis, req.url, req.keyword, keys)
     except Exception as exc:
         logger.error(f"/competitors primary error: {exc}")
+        if isinstance(exc, FetchError):
+            await _run(_refund, gate)
         raise _analysis_http_error(exc)
 
     primary_raw.pop("_soup", None)
+    primary_raw.pop("_x_robots_tag", None)
     primary_text = primary_raw.pop("_text", "")
 
     # Competitor discovery
@@ -661,21 +790,18 @@ async def competitors(req: CompetitorsRequest, request: Request):
             return None
         try:
             row = await _run(analyze_venue, comp_url, req.keyword, True)
-            row["Role"]      = "Direct Competitor"
-            row["SERP Rank"] = comp.get("SERP Rank", comp.get("Direct Rank", "N/A"))
-            return row
         except Exception as exc:
-            logger.warning(f"comp error {comp_url}: {exc}")
-            return {"Venue Name": comp_url, "URL": comp_url, "SEO Score": 0,
-                    "Score Band": "Blocked", "Role": "Direct Competitor", "error": str(exc)}
+            logger.warning(f"comp error {comp_url}: {exc}")   # logged, never sent to the client
+            message, kind = row_error(exc)
+            row = {"Venue Name": comp_url, "URL": comp_url, "SEO Score": 0,
+                   "Score Band": "Blocked", "error": message, "error_kind": kind}
+        row["Role"]      = "Direct Competitor"
+        row["SERP Rank"] = comp.get("SERP Rank", comp.get("Direct Rank", "N/A"))
+        return row
 
     _step(f"Analysing {min(len(direct_competitors), 8)} competitor sites")
     comp_tasks = [_analyze_comp(c) for c in direct_competitors[:8]]
     comp_rows  = [r for r in await asyncio.gather(*comp_tasks) if r]
-
-    # Semantic score for primary
-    semantic = await _run(semantic_keyword_score, primary_text, req.keyword)
-    primary_raw["semantic"] = semantic
 
     # Content brief
     _step("Building the content brief")
@@ -693,10 +819,10 @@ async def competitors(req: CompetitorsRequest, request: Request):
     for r in comp_rows:
         r.pop("_text", None)
 
-    # Real Google positions for the site and each competitor (one Serper search).
-    # The report used to hard-code the site as #1, so every report claimed first place.
+    # Real Google positions for the site and each competitor (Serper, searched in the site's country).
     _step("Checking real Google positions")
-    positions = await _run(_google_positions, req.keyword, [req.url] + [r.get("URL", "") for r in comp_rows], keys["serper"])
+    positions = await _run(_google_positions, req.keyword, [req.url] + [r.get("URL", "") for r in comp_rows],
+                           keys["serper"], gl, hl)
     def _pos(u):
         return "unknown" if positions is None else positions.get(u)
     primary_rank = _pos(req.url)
@@ -706,11 +832,12 @@ async def competitors(req: CompetitorsRequest, request: Request):
 
     # AI summary
     ai_summary = None
+    ai_summary_error = None
     if keys["gemini"] and comp_rows:
         _step("Writing the AI strategy report")
         try:
             primary_row = {
-                "Venue Name":         primary_raw.get("title", req.url),
+                "Venue Name":         primary_raw.get("title") or req.url,
                 "SERP Rank":          primary_rank,
                 "SEO Score":          primary_raw["seo_score"],
                 "Keyword Count":      primary_raw["keyword_count"],
@@ -720,7 +847,8 @@ async def competitors(req: CompetitorsRequest, request: Request):
             }
             all_rows = [primary_row] + comp_rows
             insights = await _run(generate_strategic_insights, primary_row, all_rows, req.keyword)
-            best_comp = max(comp_rows, key=lambda r: r.get("SEO Score", 0), default={})
+            best_comp = max((r for r in comp_rows if not r.get("error")),
+                            key=lambda r: r.get("SEO Score", 0), default={})
             ai_summary = await _run(
                 generate_ai_executive_summary,
                 keys["gemini"], primary_row["Venue Name"], req.keyword,
@@ -729,12 +857,15 @@ async def competitors(req: CompetitorsRequest, request: Request):
             )
         except Exception as exc:
             logger.warning(f"AI summary error: {exc}")
-            ai_summary = f"AI summary unavailable: {exc}"
+            ai_summary = None
+        if not ai_summary:
+            ai_summary, ai_summary_error = None, "unavailable"
 
     return CompetitorsResponse(
         primary=primary_raw, competitors=comp_rows,
         search_log=search_log, location_msg=location_msg,
-        ai_summary=ai_summary,
+        search_location={"gl": gl, "hl": hl, "label": location["location_string"]},
+        ai_summary=ai_summary, ai_summary_error=ai_summary_error,
         pool_uses=int(gate["uses"]), pool_remaining=int(gate["remaining"]),
     )
 
@@ -742,13 +873,13 @@ async def competitors(req: CompetitorsRequest, request: Request):
 @app.post("/jobs/analyze", status_code=202)
 async def analyze_job(req: AnalyzeRequest, request: Request):
     """Start an analysis in the background; poll GET /jobs/{job_id}."""
-    return _start_job("analyze", lambda: analyze(req, request))
+    return _start_job("analyze", lambda: analyze(req, request), _client_ip(request))
 
 
 @app.post("/jobs/competitors", status_code=202)
 async def competitors_job(req: CompetitorsRequest, request: Request):
     """Start a competitor search in the background; poll GET /jobs/{job_id}."""
-    return _start_job("competitors", lambda: competitors(req, request))
+    return _start_job("competitors", lambda: competitors(req, request), _client_ip(request))
 
 
 @app.get("/jobs/{job_id}")
@@ -763,6 +894,7 @@ async def job_status(job_id: str):
     elif job["status"] == "error":
         out["error"] = job.get("error")
         out["status_code"] = job.get("status_code")
+        out["error_kind"] = job.get("error_kind", "internal")
     return out
 
 
@@ -772,10 +904,12 @@ async def suggest_meta(req: SuggestMetaRequest, request: Request):
     Generate AI-powered meta title + description suggestions.
     Does not draw from the global pool, but is capped per IP per day.
     """
-    _quota_gate(request, "helpers", HELPER_DAILY_LIMIT)
+    gate = await _helper_gate(req.url, request)
     try:
         result = await _run(_full_seo_analysis, req.url, req.keyword, {})
     except Exception as exc:
+        if isinstance(exc, FetchError):
+            await _run(_refund, gate)
         raise _analysis_http_error(exc)
 
     soup = result.pop("_soup")
@@ -808,10 +942,12 @@ async def suggest_meta(req: SuggestMetaRequest, request: Request):
 @app.post("/schema")
 async def schema_endpoint(req: SchemaRequest, request: Request):
     """Generate JSON-LD schema markup for the given URL."""
-    _quota_gate(request, "helpers", HELPER_DAILY_LIMIT)
+    gate = await _helper_gate(req.url, request)
     try:
         result = await _run(_full_seo_analysis, req.url, req.keyword, {})
     except Exception as exc:
+        if isinstance(exc, FetchError):
+            await _run(_refund, gate)
         raise _analysis_http_error(exc)
 
     soup = result.pop("_soup")
@@ -837,10 +973,12 @@ async def schema_endpoint(req: SchemaRequest, request: Request):
 @app.post("/local-seo")
 async def local_seo_endpoint(req: SuggestMetaRequest, request: Request):
     """Analyze page for local SEO signals."""
-    _quota_gate(request, "helpers", HELPER_DAILY_LIMIT)
+    gate = await _helper_gate(req.url, request)
     try:
         result = await _run(_full_seo_analysis, req.url, req.keyword, {})
     except Exception as exc:
+        if isinstance(exc, FetchError):
+            await _run(_refund, gate)
         raise _analysis_http_error(exc)
 
     soup = result.pop("_soup")
@@ -854,9 +992,8 @@ async def local_seo_endpoint(req: SuggestMetaRequest, request: Request):
     return {"url": req.url, "keyword": req.keyword, **local_data}
 
 
-@app.post("/compare")
 async def compare(req: CompareRequest, request: Request):
-    gate = _gate(req.user_api_keys, request)
+    gate = await _run(_gate, req.user_api_keys, request)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
     try:
         r1, r2 = await asyncio.gather(
@@ -879,11 +1016,10 @@ async def compare(req: CompareRequest, request: Request):
                            pool_uses=gate["uses"], pool_remaining=gate["remaining"])
 
 
-@app.post("/leaderboard")
 async def leaderboard(req: LeaderboardRequest, request: Request):
     if len(req.urls) > 10:
         raise HTTPException(status_code=400, detail="Maximum 10 URLs.")
-    gate = _gate(req.user_api_keys, request)
+    gate = await _run(_gate, req.user_api_keys, request)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     tasks = [_run(analyze_venue, url, req.keyword) for url in req.urls]
@@ -892,8 +1028,10 @@ async def leaderboard(req: LeaderboardRequest, request: Request):
     rows = []
     for url, r in zip(req.urls, results):
         if isinstance(r, Exception):
+            logger.warning(f"/leaderboard row error {url}: {r}")
+            message, kind = row_error(r)
             rows.append({"Venue Name": url, "URL": url, "SEO Score": 0,
-                         "Score Band": "Blocked", "error": str(r)})
+                         "Score Band": "Blocked", "error": message, "error_kind": kind})
         else:
             rows.append(r)
 
@@ -901,9 +1039,8 @@ async def leaderboard(req: LeaderboardRequest, request: Request):
     return LeaderboardResponse(rows=rows, pool_uses=gate["uses"], pool_remaining=gate["remaining"])
 
 
-@app.post("/pagespeed")
 async def pagespeed(req: PageSpeedRequest, request: Request):
-    gate = _gate(req.user_api_keys, request)
+    gate = await _run(_gate, req.user_api_keys, request)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
     if not keys["pagespeed"]:
         raise HTTPException(status_code=400, detail="PAGESPEED_API_KEY required.")
@@ -923,7 +1060,7 @@ class TrackRequest(_UrlModel):
 @app.post("/track")
 async def track_keyword(req: TrackRequest, request: Request):
     """Save a URL+keyword for rank tracking, then immediately check its SERP position."""
-    _quota_gate(request, "track", TRACK_DAILY_LIMIT)
+    await _run(_quota_gate, request, "track", TRACK_DAILY_LIMIT)
     supabase_url = os.environ.get("SUPABASE_URL", "")
     supabase_key = os.environ.get("SUPABASE_KEY", "")
     serper_key   = os.environ.get("SERPER_API_KEY", "")
@@ -939,7 +1076,9 @@ async def track_keyword(req: TrackRequest, request: Request):
     rank_result = None
     if serper_key:
         try:
-            rank_result = await _run(check_rank, req.url, req.keyword, serper_key)
+            loc = get_location_from_url(req.url)
+            rank_result = await _run(check_rank, req.url, req.keyword, serper_key,
+                                     loc["serper_gl"], loc.get("serper_hl"))
             await _run(
                 save_rank_result,
                 row["id"], rank_result["position"], supabase_url, supabase_key,
@@ -954,6 +1093,7 @@ async def track_keyword(req: TrackRequest, request: Request):
 @app.get("/rankings")
 async def get_rankings(url: str, request: Request):
     """Get all tracked keywords + rank history for a URL."""
+    await _run(_quota_gate, request, "rankings", 60)
     supabase_url = os.environ.get("SUPABASE_URL", "")
     supabase_key = os.environ.get("SUPABASE_KEY", "")
 
@@ -1019,7 +1159,7 @@ async def contact_form(req: ContactRequest, request: Request):
 
     # Per-IP rate limit
     ip = _client_ip(request)
-    if not _contact_rate_ok(ip):
+    if not await _run(_contact_rate_ok, ip):
         raise HTTPException(status_code=429, detail="Too many contact requests. Try again later.")
 
     gmail_user = os.environ.get("GMAIL_USER", "")
@@ -1076,6 +1216,18 @@ Message:
 
     threading.Thread(target=_send, daemon=True).start()
     return {"ok": True}
+
+
+# ── Legacy synchronous scan routes ────────────────────────────────────────────
+# The site uses the /jobs/* endpoints. These long-running sync routes are off
+# unless ENABLE_LEGACY_ENDPOINTS=1; analyze() and competitors() stay as plain
+# functions the jobs call.
+if os.getenv("ENABLE_LEGACY_ENDPOINTS", "") == "1":
+    app.post("/analyze")(analyze)
+    app.post("/competitors")(competitors)
+    app.post("/compare")(compare)
+    app.post("/leaderboard")(leaderboard)
+    app.post("/pagespeed")(pagespeed)
 
 
 @app.exception_handler(Exception)

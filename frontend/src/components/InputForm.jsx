@@ -3,6 +3,9 @@ import { getRateStatus } from '../api'
 
 const DEFAULT_LIMIT = 100   // replaced by /rate-status daily_limit once loaded
 
+const SERPER_RE = /^[a-f0-9]{40}$/
+const GEMINI_RE = /^AIzaSy[A-Za-z0-9_-]{33}$/
+
 const inputStyle = {
   width: '100%',
   background: '#111',
@@ -11,7 +14,6 @@ const inputStyle = {
   padding: '12px 16px',
   color: '#fff',
   fontSize: '14px',
-  outline: 'none',
   transition: 'border-color 0.15s',
 }
 
@@ -20,95 +22,128 @@ const labelStyle = {
   fontSize: '11px',
   fontWeight: 700,
   letterSpacing: '0.1em',
-  color: '#606060',
+  color: 'var(--text-muted)',
   marginBottom: '8px',
   textTransform: 'uppercase',
 }
 
-export default function InputForm({ onAnalyze, onCompetitors, loading }) {
-  const [url, setUrl] = useState('')
-  const [keyword, setKeyword] = useState('')
+const hintStyle = { fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }
+
+function normalizeUrl(raw) {
+  const u = String(raw || '').trim()
+  if (!u) return ''
+  return /^https?:\/\//i.test(u) ? u : `https://${u.replace(/^\/+/, '')}`
+}
+
+function ToggleBtn({ pressed, onClick, children }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      style={{
+        background: pressed ? 'rgba(230,57,70,0.1)' : '#161616',
+        border: `1px solid ${pressed ? 'rgba(230,57,70,0.4)' : '#2a2a2a'}`,
+        borderRadius: '6px', padding: '6px 12px', cursor: 'pointer',
+        fontSize: '11px', fontWeight: 700,
+        color: pressed ? '#ff6b75' : 'var(--text-body)',
+        transition: 'all 0.15s',
+      }}
+    >{children}</button>
+  )
+}
+
+export default function InputForm({
+  onAnalyze, onCompetitors, loading,
+  activeTab = 'check', onTabChange, urlRef, initial, refreshKey,
+}) {
+  const [url, setUrl] = useState(initial?.url ?? '')
+  const [keyword, setKeyword] = useState(initial?.keyword ?? '')
+  const [sharedMode, setSharedMode] = useState(initial?.url ? (initial.mode || 'analyze') : null)
   const [focusedUrl, setFocusedUrl] = useState(false)
   const [focusedKw, setFocusedKw] = useState(false)
   const [globalUsed, setGlobalUsed] = useState(null)   // null = loading
-  const [GLOBAL_LIMIT, setGlobalLimit] = useState(DEFAULT_LIMIT)
+  const [globalLimit, setGlobalLimit] = useState(DEFAULT_LIMIT)
   const [showTooltip, setShowTooltip] = useState(false)
   const [crawlMode, setCrawlMode] = useState('standard')
   const [geoMode, setGeoMode] = useState(false)
-  const [activeTab, setActiveTab] = useState('check')  // 'check' | 'apikey'
+  const [formError, setFormError] = useState(null)
 
-  // User-supplied API keys
+  // User-supplied API keys (kept in memory only)
   const [geminiKey, setGeminiKey] = useState('')
   const [serperKey, setSerperKey] = useState('')
-  const [keySaved, setKeySaved] = useState(false)
+
+  const setActiveTab = id => onTabChange?.(id)
 
   useEffect(() => {
+    let alive = true
     getRateStatus()
       .then(data => {
+        if (!alive) return
         if (data?.ip_used != null) setGlobalUsed(data.ip_used)
         if (data?.daily_limit) setGlobalLimit(data.daily_limit)
       })
-      .catch(() => setGlobalUsed(0))
-  }, [])
+      .catch(() => { if (alive) setGlobalUsed(v => v ?? 0) })
+    return () => { alive = false }
+  }, [refreshKey])
 
   const checksUsed = globalUsed ?? 0
-  const checksLeft = Math.max(0, GLOBAL_LIMIT - checksUsed)
-  const limitReached = checksLeft === 0
-  const hasOwnKeys = geminiKey.trim() || serperKey.trim()
+  const checksLeft = Math.max(0, globalLimit - checksUsed)
+  const limitReached = globalUsed !== null && checksLeft === 0
+  const geminiOk = GEMINI_RE.test(geminiKey.trim())
+  const serperOk = SERPER_RE.test(serperKey.trim())
+  const hasOwnKeys = geminiOk && serperOk
+  const blocked = !hasOwnKeys && limitReached
 
   function userApiKeys() {
-    const keys = {}
-    if (geminiKey.trim()) keys.gemini_key = geminiKey.trim()
-    if (serperKey.trim()) keys.serper_key = serperKey.trim()
-    return Object.keys(keys).length > 0 ? keys : undefined
+    return hasOwnKeys ? { gemini_key: geminiKey.trim(), serper_key: serperKey.trim() } : undefined
   }
 
-  function refreshGlobalCount() {
-    getRateStatus()
-      .then(data => {
-        if (data?.ip_used != null) setGlobalUsed(data.ip_used)
-        if (data?.daily_limit) setGlobalLimit(data.daily_limit)
-      })
-      .catch(() => {})
-  }
-
-  function handleAnalyze(e) {
-    e.preventDefault()
-    if (!url.trim()) return
-    if (!hasOwnKeys && limitReached) return
+  function run(mode) {
+    setFormError(null)
+    const cleanUrl = normalizeUrl(url)
+    if (!cleanUrl) {
+      setFormError('Enter the page URL you want to check.')
+      urlRef?.current?.focus()
+      return
+    }
+    if (mode === 'competitors' && !keyword.trim()) {
+      setFormError('Add a target keyword to find competitors.')
+      document.getElementById('kw-input')?.focus()
+      return
+    }
+    if (blocked) return
+    if (cleanUrl !== url) setUrl(cleanUrl)
+    setSharedMode(null)
     if (!hasOwnKeys) setGlobalUsed(v => (v ?? 0) + 1)
-    refreshGlobalCount()
-    onAnalyze({ url: url.trim(), keyword: keyword.trim(), crawlMode, geo: geoMode, userApiKeys: userApiKeys() })
+    const params = { url: cleanUrl, keyword: keyword.trim(), crawlMode, geo: geoMode, userApiKeys: userApiKeys() }
+    if (mode === 'competitors') onCompetitors(params)
+    else onAnalyze(params)
   }
 
-  function handleCompetitors(e) {
+  function handleSubmit(e) {
     e.preventDefault()
-    if (!url.trim()) return
-    if (!hasOwnKeys && limitReached) return
-    if (!hasOwnKeys) setGlobalUsed(v => (v ?? 0) + 1)
-    refreshGlobalCount()
-    onCompetitors({ url: url.trim(), keyword: keyword.trim(), crawlMode, userApiKeys: userApiKeys() })
-  }
-
-  function handleSaveKeys() {
-    setKeySaved(true)
-    setTimeout(() => setKeySaved(false), 2500)
+    run('analyze')
   }
 
   const tabBtn = (id, label) => (
     <button
       type="button"
+      role="tab"
+      id={`tab-${id}`}
+      aria-selected={activeTab === id}
+      aria-controls={`panel-${id}`}
       onClick={() => setActiveTab(id)}
       style={{
         flex: 1,
-        padding: '10px 0',
+        padding: '10px 4px',
         fontSize: '12px',
         fontWeight: 700,
         letterSpacing: '0.07em',
         border: 'none',
         borderBottom: `2px solid ${activeTab === id ? '#e63946' : 'transparent'}`,
         background: 'transparent',
-        color: activeTab === id ? '#e63946' : '#555',
+        color: activeTab === id ? '#ff6b75' : 'var(--text-body)',
         cursor: 'pointer',
         transition: 'all 0.15s',
       }}
@@ -117,27 +152,27 @@ export default function InputForm({ onAnalyze, onCompetitors, loading }) {
     </button>
   )
 
+  const disabled = loading || blocked
+
   return (
     <div
+      className="input-form no-print"
       style={{
         background: '#161616',
         border: '1px solid #2a2a2a',
         borderRadius: '12px',
-        overflow: 'hidden',
         maxWidth: '700px',
         margin: '32px auto',
       }}
     >
       {/* Tab bar */}
       <div
-        style={{
-          display: 'flex',
-          borderBottom: '1px solid #2a2a2a',
-          background: '#111',
-        }}
+        role="tablist"
+        aria-label="Scan options"
+        style={{ display: 'flex', borderBottom: '1px solid #2a2a2a', background: '#111', borderRadius: '12px 12px 0 0' }}
       >
         {tabBtn('check', 'CHECK PAGE')}
-        {tabBtn('apikey', '🔑 ADD YOUR OWN KEY')}
+        {tabBtn('apikey', '🔑 ADD YOUR OWN KEYS')}
       </div>
 
       {/* Pool counter */}
@@ -146,6 +181,7 @@ export default function InputForm({ onAnalyze, onCompetitors, loading }) {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: '12px',
           padding: '10px 20px',
           borderBottom: '1px solid #1e1e1e',
           background: '#111',
@@ -153,231 +189,268 @@ export default function InputForm({ onAnalyze, onCompetitors, loading }) {
       >
         {hasOwnKeys ? (
           <span style={{ fontSize: '12px', color: '#4caf50', fontWeight: 700 }}>
-            ✓ Using your own API key — unlimited checks
+            ✓ Using your keys: up to 100 scans a day
           </span>
         ) : (
-          <span style={{ fontSize: '12px', color: limitReached ? '#e63946' : '#a0a0a0' }}>
-            {globalUsed === null ? 'Loading...' : (
+          <span style={{ fontSize: '12px', color: limitReached ? '#ff6b75' : 'var(--text-body)' }}>
+            {globalUsed === null ? 'Loading…' : (
               <>
-                You have{' '}
-                <span style={{ fontWeight: 700, color: '#e63946' }}>
-                  {checksLeft} of {GLOBAL_LIMIT}
-                </span>{' '}
-                checks left (demo)
+                Shared free pool:{' '}
+                <span style={{ fontWeight: 700, color: '#ff6b75' }}>{checksLeft} of {globalLimit}</span>{' '}
+                scans left today
               </>
             )}
           </span>
         )}
         <div style={{ position: 'relative' }}>
-          <span
+          <button
+            type="button"
+            aria-label="About the free scan pool"
+            aria-expanded={showTooltip}
+            aria-controls="pool-tooltip"
+            onClick={() => setShowTooltip(v => !v)}
+            onBlur={() => setShowTooltip(false)}
             onMouseEnter={() => setShowTooltip(true)}
             onMouseLeave={() => setShowTooltip(false)}
             style={{
-              width: '16px', height: '16px', borderRadius: '50%', background: '#222',
+              width: '20px', height: '20px', borderRadius: '50%', background: '#222',
               border: '1px solid #333', display: 'inline-flex', alignItems: 'center',
-              justifyContent: 'center', fontSize: '10px', color: '#606060',
-              cursor: 'default', fontWeight: 700,
+              justifyContent: 'center', fontSize: '11px', color: 'var(--text-body)',
+              cursor: 'pointer', fontWeight: 700, padding: 0,
             }}
-          >?</span>
+          >?</button>
           {showTooltip && (
-            <div style={{
-              position: 'absolute', right: 0, top: '24px', zIndex: 100,
+            <div id="pool-tooltip" role="tooltip" style={{
+              position: 'absolute', right: 0, top: '26px', zIndex: 100,
               background: '#1e1e1e', border: '1px solid #333', borderRadius: '8px',
-              padding: '10px 14px', width: '230px', fontSize: '12px', color: '#a0a0a0',
+              padding: '10px 14px', width: '230px', maxWidth: '70vw', fontSize: '12px', color: 'var(--text-body)',
               lineHeight: 1.5, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
             }}>
-              {GLOBAL_LIMIT} free checks per day, shared across all users. Resets daily at midnight UTC.
-              Add your own API keys for unlimited access.
+              Everyone shares {globalLimit} free scans a day. Resets daily at midnight UTC.
+              Add both of your own free keys for up to 100 scans a day of your own.
             </div>
           )}
         </div>
       </div>
 
       {/* ── Tab: Check page ── */}
-      {activeTab === 'check' && (
-        <div>
-          {/* Crawl / GEO toggles */}
-          <div style={{ padding: '12px 20px', borderBottom: '1px solid #1e1e1e', background: '#0f0f0f', display: 'flex', gap: '8px' }}>
-            {[
-              { val: 'standard', label: 'Standard crawl' },
-              { val: 'javascript', label: 'JS rendering' },
-            ].map(opt => (
-              <button
-                key={opt.val}
-                type="button"
-                onClick={() => setCrawlMode(opt.val)}
-                style={{
-                  background: crawlMode === opt.val ? 'rgba(230,57,70,0.1)' : '#161616',
-                  border: `1px solid ${crawlMode === opt.val ? 'rgba(230,57,70,0.4)' : '#2a2a2a'}`,
-                  borderRadius: '6px', padding: '6px 12px', cursor: 'pointer',
-                  fontSize: '11px', fontWeight: 700,
-                  color: crawlMode === opt.val ? '#e63946' : '#666',
-                  transition: 'all 0.15s',
-                }}
-              >{opt.label}</button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setGeoMode(g => !g)}
-              style={{
-                background: geoMode ? 'rgba(230,57,70,0.1)' : '#161616',
-                border: `1px solid ${geoMode ? 'rgba(230,57,70,0.4)' : '#2a2a2a'}`,
-                borderRadius: '6px', padding: '6px 12px', cursor: 'pointer',
-                fontSize: '11px', fontWeight: 700,
-                color: geoMode ? '#e63946' : '#666', transition: 'all 0.15s',
-              }}
-            >GEO analysis</button>
+      <div role="tabpanel" id="panel-check" aria-labelledby="tab-check" hidden={activeTab !== 'check'}>
+        {/* Crawl / GEO toggles */}
+        <div style={{ padding: '12px 20px', borderBottom: '1px solid #1e1e1e', background: '#0f0f0f' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <ToggleBtn pressed={crawlMode === 'standard'} onClick={() => setCrawlMode('standard')}>Standard crawl</ToggleBtn>
+            <ToggleBtn pressed={crawlMode === 'javascript'} onClick={() => setCrawlMode('javascript')}>JS rendering</ToggleBtn>
+            <ToggleBtn pressed={geoMode} onClick={() => setGeoMode(g => !g)}>GEO analysis</ToggleBtn>
           </div>
+          <div style={{ ...hintStyle, lineHeight: 1.5 }}>
+            <div>JS rendering: use for sites built with JavaScript (React, Wix, Squarespace). Slower.</div>
+            <div>GEO analysis: also checks whether AI search tools like ChatGPT and Perplexity can read your page.</div>
+          </div>
+        </div>
 
-          <div style={{ padding: '24px 28px 28px' }}>
-            {!hasOwnKeys && limitReached && (
-              <div
+        <div style={{ padding: '24px 20px 24px' }} className="form-body">
+          {blocked && (
+            <div
+              role="status"
+              style={{
+                background: 'rgba(230,57,70,0.08)', border: '1px solid rgba(230,57,70,0.25)',
+                borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
+                fontSize: '13px', color: '#ff6b75',
+              }}
+            >
+              Today's free scans are used up.{' '}
+              <button
+                type="button"
+                onClick={() => setActiveTab('apikey')}
+                style={{ background: 'none', border: 'none', color: '#ff8a92', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: '13px', padding: 0 }}
+              >
+                Add your own free keys
+              </button>{' '}for up to 100 scans a day.
+            </div>
+          )}
+
+          {sharedMode && (
+            <div
+              style={{
+                background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)',
+                borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
+                fontSize: '13px', color: 'var(--text-body)', display: 'flex', gap: '12px',
+                alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap',
+              }}
+            >
+              <span>
+                Shared {sharedMode === 'competitors' ? 'competitor scan' : 'scan'} loaded. Nothing runs until you click.
+              </span>
+              <button
+                type="button"
+                onClick={() => run(sharedMode)}
+                disabled={disabled}
                 style={{
-                  background: 'rgba(230,57,70,0.08)', border: '1px solid rgba(230,57,70,0.25)',
-                  borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
-                  fontSize: '13px', color: '#e63946',
+                  background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px',
+                  padding: '8px 14px', fontWeight: 700, fontSize: '12px', cursor: disabled ? 'not-allowed' : 'pointer',
                 }}
               >
-                All {GLOBAL_LIMIT} demo checks have been used.{' '}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('apikey')}
-                  style={{ background: 'none', border: 'none', color: '#ff6b75', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: '13px', padding: 0 }}
-                >
-                  Add your own API key
-                </button>{' '}for unlimited access.
+                Run this scan
+              </button>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} noValidate>
+            <div style={{ marginBottom: '16px' }}>
+              <label htmlFor="url-input" style={labelStyle}>Website URL</label>
+              <input
+                id="url-input"
+                ref={urlRef}
+                type="text"
+                inputMode="url"
+                autoComplete="url"
+                autoCapitalize="off"
+                spellCheck={false}
+                placeholder="example.com/page"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onFocus={() => setFocusedUrl(true)}
+                onBlur={() => { setFocusedUrl(false); if (url.trim()) setUrl(normalizeUrl(url)) }}
+                style={{ ...inputStyle, borderColor: focusedUrl ? '#e63946' : '#2a2a2a' }}
+                required
+                aria-describedby={formError ? 'form-error' : undefined}
+              />
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label htmlFor="kw-input" style={labelStyle}>Target Keyword</label>
+              <input
+                id="kw-input"
+                type="text"
+                placeholder="e.g. seo audit tool"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                onFocus={() => setFocusedKw(true)}
+                onBlur={() => setFocusedKw(false)}
+                style={{ ...inputStyle, borderColor: focusedKw ? '#e63946' : '#2a2a2a' }}
+                aria-describedby="kw-hint"
+              />
+              <div id="kw-hint" style={hintStyle}>Optional for a page check. Required to find competitors.</div>
+            </div>
+
+            {formError && (
+              <div id="form-error" role="alert" style={{ fontSize: '13px', color: '#ff6b75', marginBottom: '14px' }}>
+                {formError}
               </div>
             )}
 
-            <form>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={labelStyle}>Website URL</label>
-                <input
-                  type="url"
-                  placeholder="https://example.com"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  onFocus={() => setFocusedUrl(true)}
-                  onBlur={() => setFocusedUrl(false)}
-                  style={{ ...inputStyle, borderColor: focusedUrl ? '#e63946' : '#2a2a2a' }}
-                  required
-                />
-              </div>
+            <div className="form-actions">
+              <button
+                type="submit"
+                disabled={disabled}
+                style={{
+                  background: loading ? '#7a1920' : blocked ? '#333' : '#e63946',
+                  color: blocked ? '#8a8a8a' : '#fff',
+                  border: 'none', borderRadius: '8px', padding: '13px',
+                  fontWeight: 700, fontSize: '13px', letterSpacing: '0.06em',
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  transition: 'background 0.15s',
+                }}
+              >
+                {loading ? '⏳ ANALYZING...' : '🔍 ANALYZE SEO'}
+              </button>
 
-              <div style={{ marginBottom: '20px' }}>
-                <label style={labelStyle}>Target Keyword</label>
-                <input
-                  type="text"
-                  placeholder="e.g. seo audit tool"
-                  value={keyword}
-                  onChange={(e) => setKeyword(e.target.value)}
-                  onFocus={() => setFocusedKw(true)}
-                  onBlur={() => setFocusedKw(false)}
-                  style={{ ...inputStyle, borderColor: focusedKw ? '#e63946' : '#2a2a2a' }}
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => run('competitors')}
+                disabled={disabled}
+                style={{
+                  background: 'transparent',
+                  color: blocked ? '#8a8a8a' : '#ff6b75',
+                  border: `1px solid ${blocked ? '#333' : 'rgba(230,57,70,0.4)'}`,
+                  borderRadius: '8px', padding: '13px', fontWeight: 700, fontSize: '13px',
+                  letterSpacing: '0.06em',
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {loading ? '⏳ LOADING...' : '🏆 FIND COMPETITORS'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <button
-                  type="submit"
-                  onClick={handleAnalyze}
-                  disabled={loading || !url.trim() || (!hasOwnKeys && limitReached)}
-                  style={{
-                    background: loading ? '#7a1920' : (!hasOwnKeys && limitReached) ? '#333' : '#e63946',
-                    color: (!hasOwnKeys && limitReached) ? '#666' : '#fff',
-                    border: 'none', borderRadius: '8px', padding: '13px',
-                    fontWeight: 700, fontSize: '13px', letterSpacing: '0.06em',
-                    cursor: (loading || !url.trim() || (!hasOwnKeys && limitReached)) ? 'not-allowed' : 'pointer',
-                    transition: 'background 0.15s', opacity: !url.trim() ? 0.5 : 1,
-                  }}
-                >
-                  {loading ? '⏳ ANALYZING...' : '🔍 ANALYZE SEO'}
-                </button>
+      {/* ── Tab: Add your own keys ── */}
+      <div role="tabpanel" id="panel-apikey" aria-labelledby="tab-apikey" hidden={activeTab !== 'apikey'} style={{ padding: '24px 20px' }}>
+        <p style={{ fontSize: '13px', color: 'var(--text-body)', marginBottom: '20px', lineHeight: 1.6 }}>
+          Add both keys (both are free) to skip the shared pool and get up to 100 scans a day of your own.
+          Keys stay in this browser tab and are sent with each scan over HTTPS.
+        </p>
 
-                <button
-                  type="button"
-                  onClick={handleCompetitors}
-                  disabled={loading || !url.trim() || (!hasOwnKeys && limitReached)}
-                  style={{
-                    background: 'transparent',
-                    color: (!hasOwnKeys && limitReached) ? '#444' : '#e63946',
-                    border: `1px solid ${(!hasOwnKeys && limitReached) ? '#333' : 'rgba(230,57,70,0.4)'}`,
-                    borderRadius: '8px', padding: '13px', fontWeight: 700, fontSize: '13px',
-                    letterSpacing: '0.06em',
-                    cursor: (loading || !url.trim() || (!hasOwnKeys && limitReached)) ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s', opacity: !url.trim() ? 0.5 : 1,
-                  }}
-                >
-                  {loading ? '⏳ LOADING...' : '🏆 FIND COMPETITORS'}
-                </button>
-              </div>
-            </form>
+        <div style={{ marginBottom: '16px' }}>
+          <label htmlFor="gemini-key" style={labelStyle}>Gemini API Key</label>
+          <input
+            id="gemini-key"
+            type="password"
+            autoComplete="off"
+            placeholder="AIzaSy..."
+            value={geminiKey}
+            onChange={(e) => setGeminiKey(e.target.value)}
+            style={inputStyle}
+            aria-describedby="gemini-hint"
+            aria-invalid={geminiKey.trim() !== '' && !geminiOk}
+          />
+          <div id="gemini-hint" style={{ ...hintStyle, color: geminiKey.trim() && !geminiOk ? '#ff6b75' : hintStyle.color }}>
+            {geminiKey.trim() && !geminiOk
+              ? "That doesn't look like a Gemini key (it starts with AIzaSy and is 39 characters)."
+              : 'Get a free key at aistudio.google.com'}
           </div>
         </div>
-      )}
 
-      {/* ── Tab: Add your own key ── */}
-      {activeTab === 'apikey' && (
-        <div style={{ padding: '24px 28px 28px' }}>
-          <p style={{ fontSize: '13px', color: '#a0a0a0', marginBottom: '20px', lineHeight: 1.6 }}>
-            Enter your own API keys to bypass the shared demo limit and get unlimited checks.
-            Keys are only used for your requests and never stored on our servers.
-          </p>
-
-          <div style={{ marginBottom: '16px' }}>
-            <label style={labelStyle}>Gemini API Key</label>
-            <input
-              type="password"
-              placeholder="AIzaSy..."
-              value={geminiKey}
-              onChange={(e) => { setGeminiKey(e.target.value); setKeySaved(false) }}
-              style={inputStyle}
-            />
-            <div style={{ fontSize: '11px', color: '#444', marginTop: '6px' }}>
-              Get a free key at aistudio.google.com
-            </div>
+        <div style={{ marginBottom: '24px' }}>
+          <label htmlFor="serper-key" style={labelStyle}>Serper API Key</label>
+          <input
+            id="serper-key"
+            type="password"
+            autoComplete="off"
+            placeholder="your serper key..."
+            value={serperKey}
+            onChange={(e) => setSerperKey(e.target.value)}
+            style={inputStyle}
+            aria-describedby="serper-hint"
+            aria-invalid={serperKey.trim() !== '' && !serperOk}
+          />
+          <div id="serper-hint" style={{ ...hintStyle, color: serperKey.trim() && !serperOk ? '#ff6b75' : hintStyle.color }}>
+            {serperKey.trim() && !serperOk
+              ? "That doesn't look like a Serper key (40 lowercase letters and numbers)."
+              : 'Get a free key at serper.dev'}
           </div>
-
-          <div style={{ marginBottom: '24px' }}>
-            <label style={labelStyle}>Serper API Key (for competitor search)</label>
-            <input
-              type="password"
-              placeholder="your serper key..."
-              value={serperKey}
-              onChange={(e) => { setSerperKey(e.target.value); setKeySaved(false) }}
-              style={inputStyle}
-            />
-            <div style={{ fontSize: '11px', color: '#444', marginTop: '6px' }}>
-              Get a free key at serper.dev
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleSaveKeys}
-            disabled={!geminiKey.trim() && !serperKey.trim()}
-            style={{
-              background: keySaved ? '#1a4a1a' : '#e63946',
-              color: '#fff', border: 'none', borderRadius: '8px',
-              padding: '12px 24px', fontWeight: 700, fontSize: '13px',
-              letterSpacing: '0.06em', cursor: 'pointer', transition: 'background 0.2s',
-              width: '100%',
-            }}
-          >
-            {keySaved ? '✓ KEY SAVED — SWITCH TO CHECK PAGE TAB' : 'SAVE KEYS & USE MY API'}
-          </button>
-
-          {hasOwnKeys && (
-            <div style={{
-              marginTop: '14px', background: 'rgba(76,175,80,0.08)',
-              border: '1px solid rgba(76,175,80,0.25)', borderRadius: '8px',
-              padding: '10px 14px', fontSize: '12px', color: '#4caf50',
-            }}>
-              ✓ Your keys are active. Switch to the "Check Page" tab to analyze a site.
-            </div>
-          )}
         </div>
-      )}
+
+        <button
+          type="button"
+          onClick={() => { setActiveTab('check'); setTimeout(() => urlRef?.current?.focus(), 0) }}
+          disabled={!hasOwnKeys}
+          style={{
+            background: hasOwnKeys ? '#e63946' : '#333',
+            color: hasOwnKeys ? '#fff' : '#8a8a8a', border: 'none', borderRadius: '8px',
+            padding: '12px 24px', fontWeight: 700, fontSize: '13px',
+            letterSpacing: '0.06em', cursor: hasOwnKeys ? 'pointer' : 'not-allowed', transition: 'background 0.2s',
+            width: '100%',
+          }}
+        >
+          Use these keys
+        </button>
+
+        <div role="status" style={{
+          marginTop: '14px', borderRadius: '8px', padding: '10px 14px', fontSize: '12px',
+          background: hasOwnKeys ? 'rgba(76,175,80,0.08)' : 'transparent',
+          border: hasOwnKeys ? '1px solid rgba(76,175,80,0.25)' : '1px solid transparent',
+          color: hasOwnKeys ? '#4caf50' : 'var(--text-muted)',
+        }}>
+          {hasOwnKeys
+            ? '✓ Both keys look right. Your scans will use your keys: up to 100 scans a day.'
+            : (geminiKey.trim() || serperKey.trim())
+              ? 'Add both keys to use your own quota. Until then, scans use the shared pool.'
+              : ''}
+        </div>
+      </div>
     </div>
   )
 }

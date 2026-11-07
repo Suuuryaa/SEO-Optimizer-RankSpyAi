@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { suggestMeta } from '../../api'
+import { suggestMeta, messageFor } from '../../api'
 
 function CopyBtn({ text }) {
   const [copied, setCopied] = useState(false)
@@ -25,7 +25,7 @@ function CopyBtn({ text }) {
   )
 }
 
-export default function MetaSuggestPanel({ url, keyword, currentTitle, currentMeta }) {
+export default function MetaSuggestPanel({ url, keyword }) {
   const [state, setState] = useState('idle') // idle | loading | done | error
   const [result, setResult] = useState(null)
   const [error, setError]   = useState(null)
@@ -38,7 +38,7 @@ export default function MetaSuggestPanel({ url, keyword, currentTitle, currentMe
       setResult(data)
       setState('done')
     } catch (e) {
-      setError(e?.response?.data?.detail || e.message || 'Failed')
+      setError(e?.message || messageFor())
       setState('error')
     }
   }
@@ -52,7 +52,7 @@ export default function MetaSuggestPanel({ url, keyword, currentTitle, currentMe
       }}>
         <div>
           <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>AI Meta Tag Generator</span>
-          <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>BART + rule-based</span>
+          <span style={{ fontSize: '11px', color: '#8a8a8a', marginLeft: '8px' }}>AI + rule-based</span>
         </div>
         {state !== 'done' && (
           <button
@@ -73,15 +73,15 @@ export default function MetaSuggestPanel({ url, keyword, currentTitle, currentMe
 
       <div style={{ padding: '20px' }}>
         {state === 'idle' && (
-          <div style={{ fontSize: '13px', color: '#555', textAlign: 'center', padding: '16px 0' }}>
+          <div style={{ fontSize: '13px', color: '#8a8a8a', textAlign: 'center', padding: '16px 0' }}>
             Click "Generate Suggestions" to get AI-powered meta title and description
             optimised for <span style={{ color: '#e63946' }}>"{keyword || 'your keyword'}"</span>
           </div>
         )}
 
         {state === 'error' && (
-          <div style={{ fontSize: '13px', color: '#e63946', background: 'rgba(230,57,70,0.08)', border: '1px solid rgba(230,57,70,0.2)', borderRadius: '8px', padding: '12px 16px' }}>
-            Error: {error}
+          <div role="alert" style={{ fontSize: '13px', color: '#e63946', background: 'rgba(230,57,70,0.08)', border: '1px solid rgba(230,57,70,0.2)', borderRadius: '8px', padding: '12px 16px' }}>
+            {error}
           </div>
         )}
 
@@ -91,7 +91,7 @@ export default function MetaSuggestPanel({ url, keyword, currentTitle, currentMe
             {/* Suggested title */}
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '11px', color: '#555', fontWeight: 700, letterSpacing: '0.08em' }}>SUGGESTED TITLE</span>
+                <span style={{ fontSize: '11px', color: '#8a8a8a', fontWeight: 700, letterSpacing: '0.08em' }}>SUGGESTED TITLE</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '11px', color: result.suggested_title.length <= 60 ? '#22c55e' : '#e63946' }}>
                     {result.suggested_title.length}/60 chars
@@ -114,7 +114,7 @@ export default function MetaSuggestPanel({ url, keyword, currentTitle, currentMe
             {/* Suggested meta */}
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '11px', color: '#555', fontWeight: 700, letterSpacing: '0.08em' }}>SUGGESTED META DESCRIPTION</span>
+                <span style={{ fontSize: '11px', color: '#8a8a8a', fontWeight: 700, letterSpacing: '0.08em' }}>SUGGESTED META DESCRIPTION</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '11px', color: result.suggested_meta.length <= 160 ? '#22c55e' : '#e63946' }}>
                     {result.suggested_meta.length}/160 chars
@@ -137,7 +137,7 @@ export default function MetaSuggestPanel({ url, keyword, currentTitle, currentMe
             {/* Regenerate */}
             <button
               onClick={handleGenerate}
-              style={{ background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '7px', padding: '8px 14px', color: '#606060', fontSize: '12px', cursor: 'pointer', alignSelf: 'flex-start' }}
+              style={{ background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '7px', padding: '8px 14px', color: '#8a8a8a', fontSize: '12px', cursor: 'pointer', alignSelf: 'flex-start' }}
             >
               ↺ Regenerate
             </button>

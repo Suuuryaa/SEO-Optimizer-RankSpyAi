@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import Modal from './ui/Modal'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -9,15 +10,6 @@ export default function ContactModal({ onClose }) {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState(null)
-
-  // Close on Escape
-  useEffect(() => {
-    function onKey(e) {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -34,13 +26,16 @@ export default function ContactModal({ onClose }) {
         body: JSON.stringify({ name, email, message }),
       })
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data?.detail || `Request failed (${res.status})`)
+        throw new Error(res.status === 429
+          ? "You've sent several messages today. Please try again tomorrow."
+          : res.status === 422 || res.status === 400
+            ? 'Please check your name, email and message, then try again.'
+            : 'Something went wrong. Please try again.')
       }
       setSuccess(true)
       setTimeout(() => onClose(), 2000)
     } catch (err) {
-      setError(err.message || 'Something went wrong. Please try again.')
+      setError(err instanceof TypeError ? "Can't reach our server. Check your connection." : (err.message || 'Something went wrong. Please try again.'))
     } finally {
       setLoading(false)
     }
@@ -56,13 +51,12 @@ export default function ContactModal({ onClose }) {
     color: '#fff',
     fontFamily: 'inherit',
     boxSizing: 'border-box',
-    outline: 'none',
     transition: 'border-color 0.15s',
   }
 
   const labelStyle = {
     fontSize: '12px',
-    color: '#606060',
+    color: 'var(--text-muted)',
     fontWeight: 600,
     letterSpacing: '0.06em',
     textTransform: 'uppercase',
@@ -71,64 +65,10 @@ export default function ContactModal({ onClose }) {
   }
 
   return (
-    <div
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 200,
-        background: 'rgba(0,0,0,0.8)',
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '640px',
-          background: '#111',
-          border: '1px solid #2a2a2a',
-          borderRadius: '16px',
-          padding: '36px',
-          position: 'relative',
-        }}
-      >
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          style={{
-            position: 'absolute',
-            top: '16px',
-            right: '16px',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: '#606060',
-            fontSize: '20px',
-            lineHeight: 1,
-            padding: '4px',
-            fontFamily: 'inherit',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
-          onMouseLeave={e => (e.currentTarget.style.color = '#606060')}
-          aria-label="Close"
-        >
-          ✕
-        </button>
-
-        {/* Header */}
-        <div style={{ marginBottom: '28px' }}>
-          <h2 style={{ margin: '0 0 8px', fontSize: '22px', fontWeight: 700, color: '#fff' }}>
-            Get in touch
-          </h2>
-          <p style={{ margin: 0, fontSize: '14px', color: '#606060', lineHeight: 1.5 }}>
-            Have questions or feedback? We'll get back to you shortly.
-          </p>
-        </div>
+    <Modal title="Get in touch" onClose={onClose} maxWidth="640px" zIndex={200} padded>
+        <p style={{ margin: '0 0 24px', fontSize: '14px', color: 'var(--text-body)', lineHeight: 1.5 }}>
+          Have questions or feedback? We'll get back to you shortly.
+        </p>
 
         {success ? (
           <div
@@ -145,15 +85,16 @@ export default function ContactModal({ onClose }) {
             <div style={{ fontSize: '16px', fontWeight: 600, color: '#fff' }}>
               Message sent!
             </div>
-            <div style={{ fontSize: '14px', color: '#606060' }}>
+            <div style={{ fontSize: '14px', color: 'var(--text-body)' }}>
               We'll be in touch soon.
             </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div>
-              <label style={labelStyle}>Name</label>
+              <label htmlFor="contact-name" style={labelStyle}>Name</label>
               <input
+                id="contact-name"
                 type="text"
                 required
                 maxLength={100}
@@ -167,8 +108,9 @@ export default function ContactModal({ onClose }) {
             </div>
 
             <div>
-              <label style={labelStyle}>Email</label>
+              <label htmlFor="contact-email" style={labelStyle}>Email</label>
               <input
+                id="contact-email"
                 type="email"
                 required
                 maxLength={200}
@@ -182,8 +124,9 @@ export default function ContactModal({ onClose }) {
             </div>
 
             <div>
-              <label style={labelStyle}>Message</label>
+              <label htmlFor="contact-message" style={labelStyle}>Message</label>
               <textarea
+                id="contact-message"
                 required
                 maxLength={3000}
                 value={message}
@@ -198,6 +141,7 @@ export default function ContactModal({ onClose }) {
 
             {error && (
               <div
+                role="alert"
                 style={{
                   background: 'rgba(230,57,70,0.08)',
                   border: '1px solid rgba(230,57,70,0.3)',
@@ -234,7 +178,6 @@ export default function ContactModal({ onClose }) {
             </button>
           </form>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }

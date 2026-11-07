@@ -2,16 +2,10 @@ import requests as _req
 import re as _re_prompt
 
 
-def _sanitize_for_prompt(text: str, max_len: int = 300) -> str:
-    """Remove prompt injection patterns from scraped content before sending to LLM."""
-    if not text:
-        return ""
-    text = _re_prompt.sub(r'(?i)ignore\s+(all\s+)?(previous|prior|above)\s+instructions?', '[removed]', text)
-    text = _re_prompt.sub(r'(?i)system\s*prompt', '[removed]', text)
-    text = _re_prompt.sub(r'(?i)(return|output|reveal|print)\s+(your\s+)?(api\s*key|secret|token|password)', '[removed]', text)
-    text = _re_prompt.sub(r'(?i)you\s+are\s+now', '[removed]', text)
-    text = _re_prompt.sub(r'(?i)act\s+as\s+(a\s+)?(different|new|another)', '[removed]', text)
-    return text[:max_len]
+def _sanitize_for_prompt(text, max_len: int = 200) -> str:
+    """Scraped/user text → prompt-safe (see ai.gemini.sanitize_for_prompt)."""
+    from ai.gemini import sanitize_for_prompt
+    return sanitize_for_prompt(text, max_len)
 
 
 def get_executive_summary(score, keyword_count, missing_alt_count, word_count):
@@ -63,7 +57,7 @@ def generate_ai_executive_summary(
     benchmark_rows=None,
 ):
     if not gemini_api_key:
-        return "No Gemini API key provided."
+        return None
 
     strategic_insights = strategic_insights or []
     recommended_fixes = recommended_fixes or []
@@ -103,10 +97,10 @@ def generate_ai_executive_summary(
 
     insights_text = "\n".join([f"  - {_sanitize_for_prompt(i)}" for i in strategic_insights[:8]]) or "  None provided."
 
-    prompt = f"""You are a senior SEO strategist writing a detailed analysis report for a business owner.
-
-PRIMARY SITE: {_sanitize_for_prompt(primary_name)}
-TARGET KEYWORD: "{_sanitize_for_prompt(keyword)}"
+    from ai.gemini import untrusted_block
+    safe_kw = _sanitize_for_prompt(keyword)
+    data = f"""PRIMARY SITE: {_sanitize_for_prompt(primary_name)}
+TARGET KEYWORD: "{safe_kw}"
 GOOGLE POSITION FOR THIS KEYWORD: {rank_text}
 PRIMARY SEO DATA: {primary_detail}
 BEST COMPETITOR: {_sanitize_for_prompt(top_competitor)}
@@ -115,7 +109,11 @@ COMPETITOR DATA:
 {comp_text}
 
 STRATEGIC INSIGHTS:
-{insights_text}
+{insights_text}"""
+
+    prompt = f"""You are a senior SEO strategist writing a detailed analysis report for a business owner.
+
+{untrusted_block(data)}
 
 RULE: Only state a Google ranking for the primary site if GOOGLE POSITION above gives one. Never claim a position that is not listed there, and never claim a competitor's ranking.
 
@@ -131,7 +129,7 @@ Write a COMPREHENSIVE SEO analysis report with these exact sections:
 3-5 bullet points on specific areas where the primary site is underperforming vs competitors.
 
 ## Keyword & Content Analysis
-Specific analysis of keyword usage, content depth, and how to improve for "{keyword}".
+Specific analysis of keyword usage, content depth, and how to improve for the target keyword.
 
 ## Technical SEO Issues
 Specific technical problems found (HTTPS, schema, alt text, internal links) with impact explanation.
@@ -145,17 +143,14 @@ Specific technical problems found (HTTPS, schema, alt text, internal links) with
 ## Conclusion
 1-2 sentences on expected outcome if recommendations are followed.
 
-Be specific, use the actual data provided, and write for a non-technical business owner."""
+Be specific, use the actual data provided, and write for a non-technical business owner. Keep the whole report under 3,500 characters."""
 
     from ai.gemini import generate_text, GeminiError
     try:
         return generate_text(gemini_api_key, prompt, temperature=0.4,
                              max_output_tokens=8192, timeout=60)
     except GeminiError as e:
-        if e.kind == "invalid_key":
-            return "AI summary unavailable — the Gemini API key was rejected."
-        if e.kind == "billing":
-            return "AI summary unavailable — the Gemini account is out of credits."
-        if e.kind == "quota":
-            return "AI summary unavailable — Gemini quota reached, try again later."
-        return "AI summary unavailable — Gemini did not return a response."
+        # The caller shows product copy; the reason is only logged.
+        import logging
+        logging.getLogger(__name__).warning(f"AI summary failed: {e.kind}")
+        return None

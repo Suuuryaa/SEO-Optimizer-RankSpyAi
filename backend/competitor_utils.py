@@ -309,6 +309,11 @@ def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None, serp
         "directly to customers and would bid on or rank for this keyword."
     )
 
+    from ai.gemini import sanitize_for_prompt, untrusted_block
+    safe_kw = sanitize_for_prompt(keyword)
+    safe_domain = sanitize_for_prompt(domain, 100)
+    geo_line = sanitize_for_prompt(geo_line)
+
     # ── SERP context — filtered direct competitors only ──
     serp_section = ""
     if serp_results:
@@ -317,24 +322,26 @@ def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None, serp
         ) == "Direct Competitor"][:12]
         if filtered:
             serp_lines = "\n".join(
-                f"  {i+1}. {r.get('title','').strip()} — {r.get('link','')}"
+                f"  {i+1}. {sanitize_for_prompt(r.get('title',''), 120)} — {sanitize_for_prompt(r.get('link',''), 200)}"
                 for i, r in enumerate(filtered)
             )
             serp_section = f"""
-GOOGLE SERP — sites currently ranking for "{keyword}" (direct business competitors only, noise already removed):
+GOOGLE SERP — sites currently ranking for "{safe_kw}" (direct business competitors only, noise already removed):
 {serp_lines}
 
 These are CONFIRMED ranking competitors — include all of them plus any other known direct competitors you are aware of.
 """
 
+    data = f"""BUSINESS: {sanitize_for_prompt(url)}
+DOMAIN: {safe_domain}
+TARGET KEYWORD: "{safe_kw}"
+{geo_line}
+{serp_section}"""
+
     prompt = f"""You are a senior competitive intelligence analyst. Your task is to identify DIRECT BRAND competitors for the business below with maximum accuracy.
 
-BUSINESS: {url}
-DOMAIN: {domain}
-TARGET KEYWORD: "{keyword}"
-{geo_line}
+{untrusted_block(data)}
 
-{serp_section}
 {intent_note}
 
 WHAT COUNTS AS A DIRECT COMPETITOR:
@@ -344,7 +351,7 @@ WHAT COUNTS AS A DIRECT COMPETITOR:
 - Has meaningful market presence (not a one-person blog or hobby site)
 
 STRICT EXCLUSIONS — do NOT include:
-- The business itself ({domain})
+- The business itself ({safe_domain})
 - Wikipedia, Reddit, Quora, forums, Q&A sites
 - YouTube, TikTok, Instagram, Facebook, any social media
 - News sites, press releases, media publications

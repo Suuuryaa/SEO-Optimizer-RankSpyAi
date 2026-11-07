@@ -86,16 +86,44 @@ def _same_origin(base: str, href: str) -> str | None:
     return None
 
 
+_CRAWL_TIMEOUT = 60      # whole crawl, seconds
+_SLOT_WAIT = 30          # seconds to wait for the shared browser slot
+
+
 async def deep_crawl(url: str, max_pages: int = _MAX_PAGES) -> dict:
     """
     Launch Playwright Chromium, crawl `url` and up to `max_pages` internal links.
-    Returns aggregated structured data.
+    Uses the single shared browser slot (one Chromium at a time on a 0.5 GB
+    server) and gives up after 60 s. Returns aggregated structured data; the
+    page text itself is only in the private "_combined_text" key.
     """
     try:
-        from playwright.async_api import async_playwright
+        from playwright.async_api import async_playwright  # noqa: F401
     except ImportError:
         logger.warning("playwright not installed — deep crawl unavailable")
-        return {"error": "playwright not installed", "pages": []}
+        return {"error": "Deep crawl isn't available on this server.", "pages": []}
+
+    from seo_utils import _BROWSER_SLOT
+    # Poll instead of a blocking acquire in a thread: if this scan is cancelled
+    # while waiting, a thread could otherwise take the slot and never give it back.
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _SLOT_WAIT
+    while not _BROWSER_SLOT.acquire(blocking=False):
+        if loop.time() >= deadline:
+            return {"error": "The browser is busy with another scan. Please try again in a minute.", "pages": []}
+        await asyncio.sleep(0.25)
+    try:
+        pages_data = await asyncio.wait_for(_crawl(url, max_pages), timeout=_CRAWL_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.warning(f"deep_crawl timed out: {url}")
+        return {"error": "Deep crawl took too long and was stopped.", "pages": []}
+    finally:
+        _BROWSER_SLOT.release()
+    return _aggregate(url, pages_data)
+
+
+async def _crawl(url: str, max_pages: int) -> list[dict]:
+    from playwright.async_api import async_playwright
 
     pages_data: list[dict] = []
     visited: set[str] = set()
@@ -106,83 +134,89 @@ async def deep_crawl(url: str, max_pages: int = _MAX_PAGES) -> dict:
             headless=True,
             args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
         )
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 900},
-        )
+        try:
+            context = await browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1280, "height": 900},
+            )
 
-        while queue and len(pages_data) <= max_pages:
-            current_url = queue.pop(0)
-            if current_url in visited:
-                continue
-            visited.add(current_url)
-
-            page = await context.new_page()
-            # Block navigation to internal/private IPs and dangerous schemes
-            async def _block_ssrf(route):
-                req_url = route.request.url
+            async def _route(route):
+                """Skip heavy media; block private addresses and non-http schemes (SSRF)."""
+                req = route.request
                 try:
-                    from urllib.parse import urlparse as _up3
-                    import ipaddress as _ipa3, socket as _sock3
-                    _parsed3 = _up3(req_url)
-                    if _parsed3.scheme not in ("http", "https"):
+                    if req.resource_type in ("image", "font", "media"):
                         await route.abort()
                         return
-                    # Every resolved address, IPv4 and IPv6 (gethostbyname saw IPv4 only)
+                    if urlparse(req.url).scheme not in ("http", "https"):
+                        await route.abort()
+                        return
                     from seo_utils import _is_public_url
-                    if not await asyncio.to_thread(_is_public_url, req_url):
+                    if not await asyncio.to_thread(_is_public_url, req.url):
                         await route.abort()
                         return
                 except Exception:
                     await route.abort()
                     return
                 await route.continue_()
-            await page.route("**/*", _block_ssrf)
-            try:
-                await page.goto(current_url, timeout=_PAGE_TIMEOUT, wait_until="domcontentloaded")
-                await page.wait_for_timeout(800)  # let JS settle
 
-                data = await _extract_page_text(page)
-                data["url"] = current_url
-                pages_data.append(data)
+            while queue and len(pages_data) <= max_pages:
+                current_url = queue.pop(0)
+                if current_url in visited:
+                    continue
+                visited.add(current_url)
 
-                # Only hover-discover on the main page
-                if current_url == url:
-                    raw_hrefs = await _hover_and_collect(page)
-                    for href in raw_hrefs:
-                        abs_url = _same_origin(url, href)
-                        if abs_url and abs_url not in visited and abs_url not in queue:
-                            queue.append(abs_url)
-                    # Deduplicate + cap queue
-                    queue = list(dict.fromkeys(queue))[:max_pages * 3]
+                page = await context.new_page()
+                await page.route("**/*", _route)
+                try:
+                    await page.goto(current_url, timeout=_PAGE_TIMEOUT, wait_until="domcontentloaded")
+                    await page.wait_for_timeout(800)  # let JS settle
 
-            except Exception as exc:
-                logger.warning(f"deep_crawl page error {current_url}: {exc}")
-                pages_data.append({"url": current_url, "error": str(exc)})
-            finally:
-                await page.close()
+                    data = await _extract_page_text(page)
+                    data["url"] = current_url
+                    pages_data.append(data)
 
-        await context.close()
-        await browser.close()
+                    # Only hover-discover on the main page
+                    if current_url == url:
+                        raw_hrefs = await _hover_and_collect(page)
+                        for href in raw_hrefs:
+                            abs_url = _same_origin(url, href)
+                            if abs_url and abs_url not in visited and abs_url not in queue:
+                                queue.append(abs_url)
+                        # Deduplicate + cap queue
+                        queue = list(dict.fromkeys(queue))[:max_pages * 3]
 
-    return _aggregate(url, pages_data)
+                except Exception as exc:
+                    logger.warning(f"deep_crawl page error {current_url}: {exc}")
+                    pages_data.append({"url": current_url, "error": "Couldn't load this page"})
+                finally:
+                    await page.close()
+
+            await context.close()
+        finally:
+            await browser.close()
+
+    return pages_data
 
 
 def _aggregate(root_url: str, pages: list[dict]) -> dict:
-    """Merge per-page data into a single crawl result."""
+    """Merge per-page data into a single crawl result (no page text is returned)."""
+    from seo_utils import count_words
+
     all_text   = []
     all_h1     = []
     all_h2     = []
     sub_pages  = []
+    details    = []
 
     for p in pages:
+        body = p.get("body_text", "")
+        details.append({k: v for k, v in p.items() if k != "body_text"} | {"words": count_words(body)})
         if "error" in p and "body_text" not in p:
             continue
-        body = p.get("body_text", "")
         if body:
             all_text.append(body)
         all_h1.extend(p.get("h1", []))
@@ -198,9 +232,10 @@ def _aggregate(root_url: str, pages: list[dict]) -> dict:
 
     return {
         "pages_crawled":  len(pages),
-        "combined_text":  combined_text[:20000],  # hard cap for HF calls
+        "total_words":    count_words(combined_text),
         "all_h1":         list(dict.fromkeys(all_h1))[:30],
         "all_h2":         list(dict.fromkeys(all_h2))[:60],
         "sub_pages":      sub_pages,
-        "pages_detail":   pages,
+        "pages_detail":   details,
+        "_combined_text": combined_text[:20000],   # internal: keyphrases only, popped before responding
     }

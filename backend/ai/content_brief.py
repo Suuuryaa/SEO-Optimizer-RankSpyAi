@@ -155,17 +155,16 @@ def generate_content_brief(
     ai_brief = None
     if gemini_api_key and valid_comps:
         try:
+            from ai.gemini import sanitize_for_prompt as _sp, untrusted_block
             comp_summary = "\n".join([
-                f"- {c.get('Venue Name', c.get('url', '?'))}: "
+                f"- {_sp(c.get('Venue Name', c.get('url', '?')), 100)}: "
                 f"{c.get('SEO Score', c.get('seo_score', 0))} score, "
                 f"{c.get('Word Count', c.get('word_count', 0))} words"
                 for c in valid_comps[:5]
             ])
-
-            prompt = f"""You are an expert SEO content strategist.
-
-Primary page: {primary_title}
-Target keyword: {keyword}
+            topics = ', '.join(_sp(t, 40) for t in topic_gaps[:8]) if topic_gaps else 'None identified'
+            data = f"""Primary page: {_sp(primary_title)}
+Target keyword: {_sp(keyword)}
 Current word count: {primary_words}
 Current SEO score: {primary_score}/100
 
@@ -173,7 +172,11 @@ Top {len(valid_comps[:5])} competitors:
 {comp_summary}
 
 Competitor average: {int(avg_words)} words, {int(avg_score)} SEO score
-Missing topics vs competitors: {', '.join(topic_gaps[:8]) if topic_gaps else 'None identified'}
+Missing topics vs competitors: {topics}"""
+
+            prompt = f"""You are an expert SEO content strategist.
+
+{untrusted_block(data)}
 
 Write a concise, actionable content brief (150–200 words) covering:
 1. Content goal and target audience

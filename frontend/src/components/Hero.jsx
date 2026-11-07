@@ -1,90 +1,38 @@
 import { useEffect, useRef } from 'react'
-import { gsap } from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
-
-gsap.registerPlugin(ScrollTrigger)
 
 const TICKER_ITEMS = [
-  'Core Web Vitals', 'Keyword Density', 'SERP Position Tracking',
-  'Meta Tag Optimization', 'Schema Markup', 'Page Speed Insights',
+  'Keyword Density', 'SERP Position Tracking',
+  'Meta Tag Optimization', 'Schema Markup',
   'Competitor Gap Analysis', 'E-E-A-T Signals', 'Content Freshness',
-  'Structured Data', 'Open Graph Tags', 'Domain Authority',
+  'Structured Data', 'Open Graph Tags', 'AI Crawler Access',
 ]
 const doubled = [...TICKER_ITEMS, ...TICKER_ITEMS]
 
 export default function Hero() {
-  const heroRef = useRef(null)
-  const titleRef = useRef(null)
-  const subRef = useRef(null)
   const glowRef = useRef(null)
-  const pillsRef = useRef(null)
 
+  // Ambient glow drifts with the mouse (skipped for reduced motion)
   useEffect(() => {
-    const el = {
-      title: titleRef.current,
-      sub: subRef.current,
-      pills: pillsRef.current,
-    }
-
-    // Set initial hidden state immediately (no flash)
-    gsap.set(el.title, { opacity: 0, y: 50 })
-    gsap.set(el.sub, { opacity: 0, y: 30 })
-    gsap.set(el.pills, { opacity: 0, y: 20 })
-
-    // Entrance timeline — runs once on load
-    const tl = gsap.timeline({ delay: 0.1 })
-    tl.to(el.title, { opacity: 1, y: 0, duration: 0.9, ease: 'power3.out' })
-      .to(el.sub,   { opacity: 1, y: 0, duration: 0.8, ease: 'power3.out' }, '-=0.5')
-      .to(el.pills, { opacity: 1, y: 0, duration: 0.7, ease: 'power3.out' }, '-=0.4')
-
-    // Scroll fade-out — only registers after entrance finishes
-    tl.call(() => {
-      gsap.to(el.title, {
-        scrollTrigger: {
-          trigger: heroRef.current,
-          start: 'top top',
-          end: '+=350',
-          scrub: 1.2,
-        },
-        y: -70,
-        opacity: 0,
-        scale: 0.93,
-        ease: 'none',
-      })
-
-      gsap.to(el.sub, {
-        scrollTrigger: {
-          trigger: heroRef.current,
-          start: 'top top',
-          end: '+=250',
-          scrub: 1,
-        },
-        y: -40,
-        opacity: 0,
-        ease: 'none',
-      })
-
-      ScrollTrigger.refresh()
-    })
-
-    // Mouse parallax glow
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    let frame = 0
     const onMouseMove = (e) => {
-      if (!glowRef.current) return
-      const x = (e.clientX / window.innerWidth - 0.5) * 60
-      const y = (e.clientY / window.innerHeight - 0.5) * 40
-      gsap.to(glowRef.current, { x, y, duration: 1.4, ease: 'power2.out' })
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        if (!glowRef.current) return
+        const x = (e.clientX / window.innerWidth - 0.5) * 60
+        const y = (e.clientY / window.innerHeight - 0.5) * 40
+        glowRef.current.style.transform = `translate(calc(-50% + ${x}px), ${y}px)`
+      })
     }
-    window.addEventListener('mousemove', onMouseMove)
-
+    window.addEventListener('mousemove', onMouseMove, { passive: true })
     return () => {
-      tl.kill()
-      ScrollTrigger.getAll().forEach((t) => t.kill())
+      cancelAnimationFrame(frame)
       window.removeEventListener('mousemove', onMouseMove)
     }
   }, [])
 
   return (
-    <div ref={heroRef} style={{ position: 'relative', overflow: 'hidden', borderBottom: '1px solid #1a1a1a' }}>
+    <div className="no-print" style={{ position: 'relative', overflow: 'hidden', borderBottom: '1px solid #1a1a1a' }}>
       {/* Ambient glow follows mouse */}
       <div
         ref={glowRef}
@@ -99,6 +47,7 @@ export default function Hero() {
           pointerEvents: 'none',
           zIndex: 0,
           willChange: 'transform',
+          transition: 'transform 1.4s cubic-bezier(0.22, 1, 0.36, 1)',
         }}
       />
 
@@ -123,7 +72,7 @@ export default function Hero() {
         </div>
 
         {/* Big title */}
-        <div ref={titleRef} style={{ willChange: 'transform, opacity' }}>
+        <div className="hero-in">
           <h1
             style={{
               fontSize: 'clamp(56px, 10vw, 100px)',
@@ -168,11 +117,11 @@ export default function Hero() {
         </div>
 
         {/* Subtitle */}
-        <div ref={subRef} style={{ willChange: 'transform, opacity' }}>
+        <div className="hero-in" style={{ animationDelay: '0.15s' }}>
           <p
             style={{
               fontSize: 'clamp(16px, 2.5vw, 20px)',
-              color: '#666',
+              color: '#a0a0a0',
               letterSpacing: '-0.01em',
               lineHeight: 1.5,
               maxWidth: '520px',
@@ -186,7 +135,7 @@ export default function Hero() {
 
         {/* Pills */}
         <div
-          ref={pillsRef}
+          className="hero-in"
           style={{
             display: 'flex',
             flexWrap: 'wrap',
@@ -194,13 +143,13 @@ export default function Hero() {
             gap: '8px',
             maxWidth: '640px',
             margin: '0 auto',
-            willChange: 'transform, opacity',
+            animationDelay: '0.3s',
           }}
         >
           {[
-            'Real-Time Intelligence', 'Competitive Benchmarking',
+            'Plain-English to-do list', 'Competitive Benchmarking',
             'Technical SEO Audit', 'AI-Powered Insights',
-            'Enterprise-Grade Analysis', 'Strategic Action Plans',
+            'Real Google positions', 'Strategic Action Plans',
           ].map((p) => (
             <span key={p} className="feature-pill">{p}</span>
           ))}
@@ -232,7 +181,7 @@ export default function Hero() {
         <div className="ticker-track">
           {doubled.map((item, i) => (
             <span key={i} style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
-              <span style={{ color: '#505050', fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              <span style={{ color: '#8a8a8a', fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                 {item}
               </span>
               <span style={{ color: 'rgba(230,57,70,0.5)', margin: '0 20px', fontSize: '8px' }}>◆</span>

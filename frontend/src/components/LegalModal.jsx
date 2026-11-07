@@ -1,3 +1,5 @@
+import Modal from './ui/Modal'
+
 const CONTENT = {
   'Terms of Service': `
 **Effective date:** September 2026
@@ -33,7 +35,6 @@ For questions, contact us through the website.
 - **URLs and keywords you submit** for analysis. Results may be cached for up to 24 hours to speed up repeat checks.
 - **Your IP address**, held temporarily (up to 25 hours) to enforce daily usage limits and prevent abuse.
 - **URLs and keywords you choose to track** with the rank tracker, stored with their ranking history until removed.
-- **Usage data** via anonymous analytics (page views, feature usage)
 
 ## What We Don't Collect
 - No account registration required
@@ -50,7 +51,7 @@ We use the following third-party APIs to deliver results:
 Cached analysis results expire after 24 hours. Rate-limit counters expire after 25 hours. Tracked keywords are kept until you ask us to remove them.
 
 ## Your Rights
-You can ask us to delete tracked keywords or a contact message you sent by contacting us through the website. Usage analytics are anonymous and cannot be tied to individuals.
+You can ask us to delete tracked keywords or a contact message you sent by contacting us through the website.
 
 ## Contact
 For privacy questions, contact us through the website.
@@ -75,50 +76,20 @@ For cookie-related questions, contact us through the website.
   `,
 }
 
+function parseMarkdown(text) {
+  return text.trim().split('\n').map((line, i) => {
+    if (line.startsWith('## ')) return <h3 key={i} style={{ fontSize: '14px', fontWeight: 700, color: '#fff', margin: '20px 0 8px' }}>{line.slice(3)}</h3>
+    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>{line.replace(/\*\*/g, '')}</p>
+    if (line.startsWith('- ')) return <li key={i} style={{ fontSize: '13px', color: 'var(--text-body)', marginLeft: '16px', marginBottom: '4px' }}>{line.slice(2).replace(/\*\*/g, '')}</li>
+    if (line.trim() === '') return <div key={i} style={{ height: '4px' }} />
+    return <p key={i} style={{ fontSize: '13px', color: 'var(--text-body)', lineHeight: 1.6, marginBottom: '4px' }}>{line}</p>
+  })
+}
+
 export default function LegalModal({ page, onClose }) {
-  const content = CONTENT[page] || ''
-
-  function parseMarkdown(text) {
-    return text.trim().split('\n').map((line, i) => {
-      if (line.startsWith('## ')) return <h3 key={i} style={{ fontSize: '14px', fontWeight: 700, color: '#fff', margin: '20px 0 8px' }}>{line.slice(3)}</h3>
-      if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontSize: '12px', color: '#555', marginBottom: '4px' }}>{line.replace(/\*\*/g, '')}</p>
-      if (line.startsWith('- ')) return <li key={i} style={{ fontSize: '13px', color: '#a0a0a0', marginLeft: '16px', marginBottom: '4px' }}>{line.slice(2)}</li>
-      if (line.trim() === '') return <div key={i} style={{ height: '4px' }} />
-      return <p key={i} style={{ fontSize: '13px', color: '#a0a0a0', lineHeight: 1.6, marginBottom: '4px' }}>{line}</p>
-    })
-  }
-
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '24px',
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: '#111', border: '1px solid #2a2a2a', borderRadius: '14px',
-          width: '100%', maxWidth: '600px', maxHeight: '80vh',
-          display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        }}
-      >
-        {/* Header */}
-        <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e1e1e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <span style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>{page}</span>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', color: '#555', fontSize: '20px', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
-          >×</button>
-        </div>
-        {/* Body */}
-        <div style={{ padding: '20px 24px', overflowY: 'auto' }}>
-          {parseMarkdown(content)}
-        </div>
-      </div>
-    </div>
+    <Modal title={page} onClose={onClose}>
+      {parseMarkdown(CONTENT[page] || '')}
+    </Modal>
   )
 }
