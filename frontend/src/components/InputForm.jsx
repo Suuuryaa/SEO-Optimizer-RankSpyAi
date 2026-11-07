@@ -59,7 +59,6 @@ export default function InputForm({
 }) {
   const [url, setUrl] = useState(initial?.url ?? '')
   const [keyword, setKeyword] = useState(initial?.keyword ?? '')
-  const [sharedMode, setSharedMode] = useState(initial?.url ? (initial.mode || 'analyze') : null)
   const [focusedUrl, setFocusedUrl] = useState(false)
   const [focusedKw, setFocusedKw] = useState(false)
   const [globalUsed, setGlobalUsed] = useState(null)   // null = loading
@@ -114,7 +113,6 @@ export default function InputForm({
     }
     if (blocked) return
     if (cleanUrl !== url) setUrl(cleanUrl)
-    setSharedMode(null)
     if (!hasOwnKeys) setGlobalUsed(v => (v ?? 0) + 1)
     const params = { url: cleanUrl, keyword: keyword.trim(), crawlMode, geo: geoMode, userApiKeys: userApiKeys() }
     if (mode === 'competitors') onCompetitors(params)
@@ -266,32 +264,6 @@ export default function InputForm({
               >
                 Add your own free keys
               </button>{' '}for up to 100 scans a day.
-            </div>
-          )}
-
-          {sharedMode && (
-            <div
-              style={{
-                background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)',
-                borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
-                fontSize: '13px', color: 'var(--text-body)', display: 'flex', gap: '12px',
-                alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap',
-              }}
-            >
-              <span>
-                Shared {sharedMode === 'competitors' ? 'competitor scan' : 'scan'} loaded. Nothing runs until you click.
-              </span>
-              <button
-                type="button"
-                onClick={() => run(sharedMode)}
-                disabled={disabled}
-                style={{
-                  background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px',
-                  padding: '8px 14px', fontWeight: 700, fontSize: '12px', cursor: disabled ? 'not-allowed' : 'pointer',
-                }}
-              >
-                Run this scan
-              </button>
             </div>
           )}
 
