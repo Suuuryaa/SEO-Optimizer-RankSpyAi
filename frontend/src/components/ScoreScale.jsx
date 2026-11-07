@@ -1,40 +1,17 @@
-const BANDS = [
-  {
-    emoji: '🔴',
-    range: '0 – 39',
-    label: 'Critical Issues',
-    color: '#e63946',
-    bg: 'rgba(230,57,70,0.08)',
-    border: 'rgba(230,57,70,0.25)',
-    desc: 'Serious problems blocking your rankings. Immediate action required.',
-    width: '40%',
-  },
-  {
-    emoji: '🟡',
-    range: '40 – 69',
-    label: 'Needs Work',
-    color: '#f97316',
-    bg: 'rgba(249,115,22,0.08)',
-    border: 'rgba(249,115,22,0.25)',
-    desc: 'Optimization opportunities exist. Work through the priority list.',
-    width: '30%',
-  },
-  {
-    emoji: '🟢',
-    range: '70 – 100',
-    label: 'Strong Foundation',
-    color: '#22c55e',
-    bg: 'rgba(34,197,94,0.08)',
-    border: 'rgba(34,197,94,0.25)',
-    desc: 'Great SEO health. Focus on content and authority building.',
-    width: '30%',
-  },
-]
+import { BANDS as SCORE_BANDS } from '../lib/score'
+
+const COPY = {
+  low: { emoji: '🔴', desc: 'Search engines are missing key information about this page. Start with the fixes marked "Fix first".', width: '40%' },
+  mid: { emoji: '🟡', desc: 'A good base. Work through the to-do list to compete for your keyword.', width: '30%' },
+  high: { emoji: '🟢', desc: 'Strong on-page basics. Gains now come from content depth and links.', width: '30%' },
+}
+
+const BANDS = SCORE_BANDS.map(b => ({ ...b, ...COPY[b.key], range: `${b.min} – ${b.max}` }))
 
 export default function ScoreScale() {
   return (
-    <div style={{ padding: '80px 24px' }}>
-      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+    <div style={{ padding: '48px 0' }}>
+      <div style={{ maxWidth: '1088px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '48px' }}>
           <h2
             style={{
@@ -76,7 +53,7 @@ export default function ScoreScale() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
             gap: '16px',
           }}
         >
@@ -94,13 +71,13 @@ export default function ScoreScale() {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '22px' }}>{b.emoji}</span>
+                <span style={{ fontSize: '22px' }} aria-hidden="true">{b.emoji}</span>
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: b.color }}>{b.label}</div>
-                  <div style={{ fontSize: '12px', color: '#606060', marginTop: '1px' }}>{b.range}</div>
+                  <h3 style={{ fontSize: '13px', fontWeight: 700, color: b.color, margin: 0 }}>{b.label}</h3>
+                  <div style={{ fontSize: '12px', color: '#a0a0a0', marginTop: '1px' }}>{b.range}</div>
                 </div>
               </div>
-              <div style={{ fontSize: '13px', color: '#808080', lineHeight: '1.6' }}>{b.desc}</div>
+              <div style={{ fontSize: '13px', color: '#a0a0a0', lineHeight: '1.6' }}>{b.desc}</div>
             </div>
           ))}
         </div>

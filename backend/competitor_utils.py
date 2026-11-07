@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 from urllib.parse import urlparse
 import json
 import re
@@ -57,6 +59,15 @@ def _get_domain(url):
         return ""
 
 
+def _same_site(domain, primary_domain):
+    """True for the primary domain itself and any of its subdomains (discuss.python.org)."""
+    if not domain or not primary_domain:
+        return False
+    return (domain == primary_domain
+            or domain.endswith("." + primary_domain)
+            or primary_domain.endswith("." + domain))
+
+
 def classify_competitor(url, title="", primary_domain=""):
     """
     Classify a SERP result. Returns one of:
@@ -67,8 +78,14 @@ def classify_competitor(url, title="", primary_domain=""):
     title_lower = title.lower() if title else ""
 
     # Primary venue — matched dynamically against the user's URL
-    if primary_domain and _get_domain(url) == primary_domain:
+    if primary_domain and _same_site(_get_domain(url), primary_domain):
         return "Primary Venue"
+
+    # Search-engine redirect / tracking links (google.com/goto?url=..., /url?q=...)
+    host = _get_domain(url)
+    if (host.startswith("google.") or ".google." in host or host in ("bing.com", "duckduckgo.com")
+            or "/goto?" in url_lower or "/url?" in url_lower):
+        return "Directory"
 
     # ========== NON-BUSINESS FILTERS (Strict) ==========
     
@@ -109,6 +126,8 @@ def classify_competitor(url, title="", primary_domain=""):
     if any(x in url_lower for x in [
         "medium.com", "wordpress.com", "blogger.com", "tumblr.com",
         "/blog/", "/news/", "/article/", "/press-release/", "/partner",
+        "/glossary", "/ref/", "/articles/", "/posts/", "/guides/", "/reviews/",
+        "alternative", "-vs-", "/compare",
         "nzherald", "stuff.co.nz", "techcrunch.com", "forbes.com",
         "businessinsider.com", "wsj.com", "ft.com", "economist.com",
     ]):
@@ -183,13 +202,22 @@ def build_full_serp_table(results, primary_url=""):
 
 
 def filter_direct_competitors(results, primary_url=""):
-    """Filter to show only direct competitors (real businesses)"""
+    """Direct competitors only (real businesses), one entry per domain.
+
+    The primary site and its subdomains are excluded — /competitors analyses the
+    primary separately, so keeping it here listed the user's own site as a rival.
+    """
     primary_domain = _get_domain(primary_url) if primary_url else ""
     filtered = []
+    seen_domains = set()
     direct_rank = 1
     for i, item in enumerate(results, start=1):
         comp_type = classify_competitor(item["link"], item.get("title", ""), primary_domain)
-        if comp_type in ["Direct Competitor", "Primary Venue"]:
+        if comp_type == "Direct Competitor":
+            domain = _get_domain(item.get("link", ""))
+            if domain in seen_domains:
+                continue
+            seen_domains.add(domain)
             filtered.append({
                 "Direct Rank": direct_rank,
                 "SERP Rank": i,
@@ -283,6 +311,11 @@ def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None, serp
         "directly to customers and would bid on or rank for this keyword."
     )
 
+    from ai.gemini import sanitize_for_prompt, untrusted_block
+    safe_kw = sanitize_for_prompt(keyword)
+    safe_domain = sanitize_for_prompt(domain, 100)
+    geo_line = sanitize_for_prompt(geo_line)
+
     # ── SERP context — filtered direct competitors only ──
     serp_section = ""
     if serp_results:
@@ -291,24 +324,26 @@ def get_competitors_via_gemini(url, keyword, gemini_api_key, location=None, serp
         ) == "Direct Competitor"][:12]
         if filtered:
             serp_lines = "\n".join(
-                f"  {i+1}. {r.get('title','').strip()} — {r.get('link','')}"
+                f"  {i+1}. {sanitize_for_prompt(r.get('title',''), 120)} — {sanitize_for_prompt(r.get('link',''), 200)}"
                 for i, r in enumerate(filtered)
             )
             serp_section = f"""
-GOOGLE SERP — sites currently ranking for "{keyword}" (direct business competitors only, noise already removed):
+GOOGLE SERP — sites currently ranking for "{safe_kw}" (direct business competitors only, noise already removed):
 {serp_lines}
 
 These are CONFIRMED ranking competitors — include all of them plus any other known direct competitors you are aware of.
 """
 
+    data = f"""BUSINESS: {sanitize_for_prompt(url)}
+DOMAIN: {safe_domain}
+TARGET KEYWORD: "{safe_kw}"
+{geo_line}
+{serp_section}"""
+
     prompt = f"""You are a senior competitive intelligence analyst. Your task is to identify DIRECT BRAND competitors for the business below with maximum accuracy.
 
-BUSINESS: {url}
-DOMAIN: {domain}
-TARGET KEYWORD: "{keyword}"
-{geo_line}
+{untrusted_block(data)}
 
-{serp_section}
 {intent_note}
 
 WHAT COUNTS AS A DIRECT COMPETITOR:
@@ -318,7 +353,7 @@ WHAT COUNTS AS A DIRECT COMPETITOR:
 - Has meaningful market presence (not a one-person blog or hobby site)
 
 STRICT EXCLUSIONS — do NOT include:
-- The business itself ({domain})
+- The business itself ({safe_domain})
 - Wikipedia, Reddit, Quora, forums, Q&A sites
 - YouTube, TikTok, Instagram, Facebook, any social media
 - News sites, press releases, media publications
@@ -334,106 +369,123 @@ OUTPUT RULES:
 
 [{{"name":"BrandName","domain":"example.com","website":"https://example.com"}}]"""
 
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 8192}
-    }
+    from ai.gemini import generate_text, GeminiError
+    try:
+        text = generate_text(gemini_api_key, prompt, temperature=0.1,
+                             max_output_tokens=8192, timeout=30)
+    except GeminiError as e:
+        # serp_utils.progressive_competitor_search catches RuntimeError and
+        # falls back to plain SERP search — keep the old error prefixes.
+        prefix = {"invalid_key": "INVALID_API_KEY", "quota": "QUOTA_429", "billing": "BILLING_402"}.get(e.kind, "ALL_FAILED")
+        raise RuntimeError(f"{prefix}||{e}") from e
 
-    # Discover available models for this API key — also validates the key early
-    _gemini_headers = {
-        "x-goog-api-key": gemini_api_key,
-        "Content-Type": "application/json",
-    }
-    available_models = []
-    for api_ver in ["v1beta", "v1"]:
+    competitors = _extract_json_list(text)
+    if competitors is None:
+        raise RuntimeError(f"ALL_FAILED||Could not extract JSON list. Raw: {text[:300]}")
+    return competitors
+
+
+# ── Brand rivals: "who competes with this business?" ─────────────────────────
+# The keyword decides which Google results we look at, not who the rivals are:
+# Flipkart's rivals are Amazon, Meesho, Snapdeal… whatever keyword is typed.
+_RIVAL_EXCLUDE = {"Social", "Encyclopedia", "Forum", "Directory", "Content", "Institutional", "Primary Venue"}
+
+_RIVALS_PROMPT = """You are a market analyst. Identify the business behind this website and its main competitors.
+
+{data}
+
+Return ONLY JSON:
+{{"business": "<what this business is, max 12 words>",
+  "home_country": "<ISO 3166-1 alpha-2 code of the country this website mainly serves, e.g. IN for flipkart.com, US for reebok.com>",
+  "competitors": [{{"name": "<brand>", "domain": "<main website domain>"}}]}}
+
+Rules for "competitors" (most important first; for a well-known brand give 8 to 10):
+- Well-known companies that compete with this business for the same customers today:
+  the same kind of business (a marketplace's rivals are other marketplaces, a sportswear
+  brand's rivals are other sportswear brands) in the same main country.
+- Use each competitor's own main website for that country (e.g. amazon.in for India).
+- Only companies that are still operating. If you are not sure a company or its website
+  exists, leave it out: fewer correct answers beat a long list.
+- Not the business itself, and not brands owned by the same parent company.
+- No social networks, news or review sites, directories, forums or marketplaces' seller pages.
+- For a small local business, only name local businesses of the same type that you are
+  confident exist; otherwise return fewer or none."""
+
+
+def _site_alive(domain: str) -> bool:
+    """The website exists: its name resolves to a public address that accepts a
+    secure connection. Big shops that stall or block bots still count as alive;
+    closed businesses whose domain is parked or dead don't (craftsvilla.com)."""
+    import socket
+    from net_safety import is_public_ip
+    for host in (domain, f"www.{domain}") if not domain.startswith("www.") else (domain,):
         try:
-            list_resp = _req.get(
-                f"https://generativelanguage.googleapis.com/{api_ver}/models",
-                headers=_gemini_headers,
-                timeout=15
-            )
-            if list_resp.status_code == 401:
-                raise RuntimeError(
-                    "INVALID_API_KEY_401: Gemini API key is invalid or not authorised. "
-                    "Check that GEMINI_API_KEY is correctly set in Streamlit Cloud secrets."
-                )
-            if list_resp.status_code == 403:
-                raise RuntimeError(
-                    "FORBIDDEN_403: Generative Language API not enabled for this key/project. "
-                    "Enable it at console.cloud.google.com → APIs & Services."
-                )
-            if list_resp.status_code == 200:
-                all_models = list_resp.json().get("models", [])
-                available_models = [
-                    m["name"].replace("models/", "")
-                    for m in all_models
-                    if "generateContent" in m.get("supportedGenerationMethods", [])
-                    and "gemini" in m.get("name", "").lower()
-                ]
-                if available_models:
-                    available_models.sort(key=lambda x: (
-                        0 if "flash" in x else 1,
-                        0 if "2.0" in x else (1 if "1.5" in x else 2)
-                    ))
-                    break
-        except RuntimeError:
-            raise
+            addrs = {a[4][0] for a in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)}
         except Exception:
-            pass
-
-    # Fallback list if discovery network-fails (gemini-pro bare alias excluded — needs OAuth on v1)
-    if not available_models:
-        available_models = [
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b",
-            "gemini-1.5-pro",
-            "gemini-1.0-pro",
-        ]
-
-    last_error = None
-    quota_errors = []
-
-    for model in available_models[:8]:
-        for api_ver in ["v1beta", "v1"]:
-            endpoint = (
-                f"https://generativelanguage.googleapis.com/{api_ver}"
-                f"/models/{model}:generateContent"
-            )
+            continue
+        for ip in list(addrs)[:3]:
+            if not is_public_ip(ip):
+                continue
             try:
-                resp = _req.post(endpoint, headers=_gemini_headers, json=payload, timeout=30)
+                # A real, working site completes a verified TLS handshake for its own name
+                import ssl
+                ctx = ssl.create_default_context()
+                with socket.create_connection((ip, 443), timeout=4) as raw:
+                    with ctx.wrap_socket(raw, server_hostname=host):
+                        return True
+            except Exception:
+                continue
+    return False
 
-                if resp.status_code == 429:
-                    # Don't give up — record the error and try the next model
-                    quota_errors.append(f"{model}/{api_ver}: {resp.text[:200]}")
-                    last_error = f"QUOTA_429||{resp.text[:400]}"
-                    break  # break inner (api_ver) loop, try next model
 
-                if resp.status_code in (401, 403):
-                    # Key-level failure — no point trying more models
-                    raise RuntimeError(
-                        f"INVALID_API_KEY_{resp.status_code}||"
-                        f"Gemini key rejected ({resp.status_code}): {resp.text[:200]}"
-                    )
+def find_brand_rivals(url, gemini_api_key, title="", description="", limit=8):
+    """Ask Gemini for this business's main rivals and home market, then keep only
+    rivals whose websites actually respond. Returns (rivals, home_country_code).
+    rivals: [{"name", "domain", "link"}] — at most `limit`."""
+    if not gemini_api_key:
+        return [], None
+    from concurrent.futures import ThreadPoolExecutor
+    from ai.gemini import generate_text, sanitize_for_prompt, untrusted_block, GeminiError
+    domain = _get_domain(url)
+    data = (f"WEBSITE: {sanitize_for_prompt(domain, 100)}\n"
+            f"PAGE TITLE: {sanitize_for_prompt(title or '', 200)}\n"
+            f"PAGE DESCRIPTION: {sanitize_for_prompt(description or '', 300)}")
+    try:
+        raw = generate_text(gemini_api_key, _RIVALS_PROMPT.format(data=untrusted_block(data)),
+                            temperature=0.1, max_output_tokens=1500, timeout=30, json_output=True)
+    except GeminiError as e:
+        logger.warning(f"brand rivals: Gemini unavailable ({e.kind})")
+        return [], None
+    try:
+        import json as _json
+        s = raw.strip()
+        obj = _json.loads(s[s.find("{"): s.rfind("}") + 1])
+    except Exception:
+        logger.warning("brand rivals: unreadable reply")
+        return [], None
 
-                if resp.status_code == 200:
-                    data = resp.json()
-                    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    competitors = _extract_json_list(text)
-                    if competitors is not None:
-                        return competitors
-                    last_error = f"{model}/{api_ver} → could not extract JSON list. Raw: {text[:300]}"
-                    continue
+    home = str(obj.get("home_country") or "").strip().upper()[:2] or None
+    seen, cands = set(), []
+    for c in obj.get("competitors") or []:
+        if not isinstance(c, dict):
+            continue
+        raw_d = str(c.get("domain") or c.get("website") or "").strip()
+        d = _get_domain(raw_d if "//" in raw_d else "https://" + raw_d).strip().lower()
+        if d.startswith("www."):
+            d = d[4:]
+        if not d or "." not in d or d in seen or _same_site(d, domain):
+            continue
+        if classify_competitor(f"https://{d}/", "", domain) in _RIVAL_EXCLUDE:
+            continue
+        seen.add(d)
+        cands.append({"name": str(c.get("name") or d)[:80], "domain": d})
+    logger.info(f"brand rivals for {domain}: home={home}, suggested={[c['domain'] for c in cands]}")
+    cands = cands[: limit + 4]                       # spares for dead sites
 
-                last_error = f"{model}/{api_ver} → HTTP {resp.status_code}: {resp.text[:200]}"
-
-            except RuntimeError:
-                raise
-            except Exception as e:
-                last_error = f"{model}/{api_ver} → {e}"
-
-    # All models exhausted — raise with the most useful error
-    if last_error and last_error.startswith("QUOTA_429||"):
-        raise RuntimeError(last_error)
-    raise RuntimeError(f"ALL_FAILED||Models tried: {available_models[:5]}. Last error: {last_error}")
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        alive = list(pool.map(lambda c: _site_alive(c["domain"]), cands))
+    dead = [c["domain"] for c, ok in zip(cands, alive) if not ok]
+    if dead:
+        logger.info(f"brand rivals: dropped {len(dead)} that don't respond: {dead}")
+    rivals = [{**c, "link": f"https://{c['domain']}/"} for c, ok in zip(cands, alive) if ok][:limit]
+    return rivals, home

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { generateSchema } from '../../api'
+import { generateSchema, messageFor } from '../../api'
 
 export default function SchemaPanel({ url, keyword }) {
   const [state, setState] = useState('idle')
@@ -15,7 +15,7 @@ export default function SchemaPanel({ url, keyword }) {
       setResult(data)
       setState('done')
     } catch (e) {
-      setError(e?.response?.data?.detail || e.message || 'Failed')
+      setError(e?.message || messageFor())
       setState('error')
     }
   }
@@ -41,7 +41,7 @@ export default function SchemaPanel({ url, keyword }) {
       }}>
         <div>
           <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>Schema Markup Generator</span>
-          <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>JSON-LD structured data</span>
+          <span style={{ fontSize: '11px', color: '#8a8a8a', marginLeft: '8px' }}>JSON-LD structured data</span>
         </div>
         {state !== 'done' && (
           <button
@@ -61,15 +61,15 @@ export default function SchemaPanel({ url, keyword }) {
 
       <div style={{ padding: '20px' }}>
         {state === 'idle' && (
-          <div style={{ fontSize: '13px', color: '#555', textAlign: 'center', padding: '16px 0' }}>
+          <div style={{ fontSize: '13px', color: '#8a8a8a', textAlign: 'center', padding: '16px 0' }}>
             Auto-detects page type and generates ready-to-paste JSON-LD structured data.<br />
             Supports: FAQPage, Product, Article, LocalBusiness, WebPage.
           </div>
         )}
 
         {state === 'error' && (
-          <div style={{ fontSize: '13px', color: '#e63946', background: 'rgba(230,57,70,0.08)', border: '1px solid rgba(230,57,70,0.2)', borderRadius: '8px', padding: '12px 16px' }}>
-            Error: {error}
+          <div role="alert" style={{ fontSize: '13px', color: '#e63946', background: 'rgba(230,57,70,0.08)', border: '1px solid rgba(230,57,70,0.2)', borderRadius: '8px', padding: '12px 16px' }}>
+            {error}
           </div>
         )}
 
@@ -86,7 +86,7 @@ export default function SchemaPanel({ url, keyword }) {
               }}>
                 {result.page_type}
               </span>
-              <span style={{ fontSize: '12px', color: '#555' }}>{result.count} schema block{result.count !== 1 ? 's' : ''}</span>
+              <span style={{ fontSize: '12px', color: '#8a8a8a' }}>{result.count} schema block{result.count !== 1 ? 's' : ''}</span>
             </div>
 
             {/* Schema code block */}
@@ -115,11 +115,11 @@ export default function SchemaPanel({ url, keyword }) {
               </button>
             </div>
 
-            <div style={{ fontSize: '12px', color: '#555', background: '#0e0e0e', border: '1px solid #1a1a1a', borderRadius: '8px', padding: '12px 14px' }}>
-              <span style={{ fontWeight: 700, color: '#444' }}>How to use:</span> Paste this code inside the <code style={{ color: '#e63946' }}>&lt;head&gt;</code> section of your HTML. Replace any <code style={{ color: '#eab308' }}>{"<!-- placeholder -->"}</code> comments with your actual data.
+            <div style={{ fontSize: '12px', color: '#8a8a8a', background: '#0e0e0e', border: '1px solid #1a1a1a', borderRadius: '8px', padding: '12px 14px' }}>
+              <span style={{ fontWeight: 700, color: '#8a8a8a' }}>How to use:</span> Paste this code inside the <code style={{ color: '#e63946' }}>&lt;head&gt;</code> section of your HTML. Replace any <code style={{ color: '#eab308' }}>{"<!-- placeholder -->"}</code> comments with your actual data.
             </div>
 
-            <button onClick={handleGenerate} style={{ background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '7px', padding: '8px 14px', color: '#606060', fontSize: '12px', cursor: 'pointer', alignSelf: 'flex-start' }}>
+            <button onClick={handleGenerate} style={{ background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '7px', padding: '8px 14px', color: '#8a8a8a', fontSize: '12px', cursor: 'pointer', alignSelf: 'flex-start' }}>
               ↺ Regenerate
             </button>
           </div>

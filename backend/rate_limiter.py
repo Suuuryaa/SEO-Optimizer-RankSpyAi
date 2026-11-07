@@ -65,7 +65,22 @@ def _redis_incr(key: str) -> int:
         return int(resp.json().get("result", 1))
     except Exception as exc:
         logger.warning(f"rate_limiter._redis_incr({key}) failed: {exc}")
-        return 1
+        return 10**9  # Fail closed — deny when Redis is unavailable
+
+
+def _redis_decr(key: str) -> int:
+    if not UPSTASH_REDIS_REST_URL or not UPSTASH_REDIS_REST_TOKEN:
+        return 0
+    try:
+        resp = requests.get(
+            f"{UPSTASH_REDIS_REST_URL}/decr/{key}",
+            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
+            timeout=_TIMEOUT,
+        )
+        return int(resp.json().get("result", 0))
+    except Exception as exc:
+        logger.warning(f"rate_limiter._redis_decr({key}) failed: {exc}")
+        return 0
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -109,22 +124,29 @@ def check_and_consume(user_has_own_keys: bool = False) -> dict:
             "message":   "User-supplied keys — pool not consumed.",
         }
 
-    uses = get_global_uses()
-    if uses >= GLOBAL_LIMIT:
+    # INCR first so two simultaneous requests can't both pass a stale read;
+    # give the credit back when that took the pool over the limit.
+    new_uses = increment_global_uses()
+    if new_uses > GLOBAL_LIMIT:
+        _redis_decr(_GLOBAL_KEY)
         return {
             "allowed":   False,
-            "uses":      uses,
+            "uses":      GLOBAL_LIMIT,
             "remaining": 0,
             "message":   (
-                f"Global usage pool exhausted ({uses}/{GLOBAL_LIMIT}). "
-                "Supply your own API keys for unlimited use."
+                f"Global usage pool exhausted ({GLOBAL_LIMIT}/{GLOBAL_LIMIT}). "
+                "Add your own free API keys to keep scanning."
             ),
         }
-
-    new_uses = increment_global_uses()
     return {
         "allowed":   True,
         "uses":      new_uses,
         "remaining": max(0, GLOBAL_LIMIT - new_uses),
         "message":   f"OK — pool use {new_uses}/{GLOBAL_LIMIT}.",
     }
+
+
+def refund() -> None:
+    """Return one pool credit (scan failed because the page couldn't be read). Never below 0."""
+    if _redis_decr(_GLOBAL_KEY) < 0:
+        _redis_set(_GLOBAL_KEY, "0")

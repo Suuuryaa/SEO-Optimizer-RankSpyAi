@@ -1,248 +1,227 @@
-function scoreColor(score) {
-  if (score >= 80) return '#22c55e'
-  if (score >= 60) return '#f97316'
-  return '#e63946'
+import { scoreBand } from '../../lib/score'
+
+const BLOCKED_COPY = "This site blocks automated checks, so we can't score it."
+
+// Google position: int → "#n", null → "Not in top 30", "unknown"/missing → "Unknown"
+function positionInfo(pos) {
+  if (typeof pos === 'number' && Number.isFinite(pos)) return { label: `#${pos}`, sort: pos }
+  if (pos === null) return { label: 'Not in top 30', sort: 1000 }
+  return { label: 'Unknown', sort: 2000 }
 }
 
-function ScoreBar({ score }) {
-  const color = scoreColor(score)
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <div
-        style={{
-          flex: 1,
-          height: '6px',
-          background: '#222',
-          borderRadius: '3px',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            width: `${score}%`,
-            height: '100%',
-            background: color,
-            borderRadius: '3px',
-            transition: 'width 0.6s ease',
-          }}
-        />
-      </div>
-      <span style={{ fontSize: '13px', fontWeight: 700, color, minWidth: '32px', textAlign: 'right' }}>
-        {score}
-      </span>
-    </div>
-  )
+function rowPosition(c, key) {
+  return Object.prototype.hasOwnProperty.call(c, key) ? c[key] : undefined
 }
 
-function RankBadge({ rank }) {
-  const colors = { 1: '#ffd700', 2: '#c0c0c0', 3: '#cd7f32' }
-  const bg = colors[rank] || '#333'
-  const isMedal = rank <= 3
-  return (
-    <div
-      style={{
-        width: '32px',
-        height: '32px',
-        borderRadius: '50%',
-        background: isMedal ? bg : '#222',
-        border: `2px solid ${isMedal ? bg : '#333'}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontWeight: 800,
-        fontSize: '13px',
-        color: isMedal ? '#000' : '#888',
-        flexShrink: 0,
-      }}
-    >
-      {rank}
-    </div>
-  )
+function hostOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url || '' }
 }
 
-function CompetitorCard({ comp, rank }) {
-  return (
-    <div
-      className="metric-card"
-      style={{
-        background: '#161616',
-        border: '1px solid #2a2a2a',
-        borderRadius: '10px',
-        padding: '18px',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
-        <RankBadge rank={rank} />
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {comp.title || comp.url || 'Unknown'}
-          </div>
-          <div style={{ fontSize: '11px', color: '#606060', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {comp.url}
-          </div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '20px', fontWeight: 900, color: scoreColor(comp.seo_score ?? 0), lineHeight: 1 }}>
-            {comp.seo_score ?? '—'}
-          </div>
-          <div style={{ fontSize: '9px', color: '#606060', letterSpacing: '0.06em' }}>SEO SCORE</div>
-        </div>
-      </div>
-
-      <ScoreBar score={comp.seo_score ?? 0} />
-
-      {/* Quick stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '12px' }}>
-        {[
-          { label: 'Words', val: comp.word_count?.toLocaleString() },
-          { label: 'Links', val: (comp.internal_links ?? 0) + (comp.external_links ?? 0) },
-          { label: 'KW Density', val: comp.keyword_density != null ? `${comp.keyword_density}%` : '—' },
-        ].map(({ label, val }) => (
-          <div key={label} style={{ background: '#111', borderRadius: '6px', padding: '8px', textAlign: 'center' }}>
-            <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>{val ?? '—'}</div>
-            <div style={{ fontSize: '10px', color: '#606060' }}>{label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Keyword flags */}
-      <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
-        {comp.keyword_in_title && (
-          <span style={{ fontSize: '10px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#22c55e', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-            KW in Title
-          </span>
-        )}
-        {comp.keyword_in_meta && (
-          <span style={{ fontSize: '10px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#3b82f6', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-            KW in Meta
-          </span>
-        )}
-        {comp.keyword_in_h1 && (
-          <span style={{ fontSize: '10px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.25)', color: '#a855f7', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-            KW in H1
-          </span>
-        )}
-      </div>
-    </div>
-  )
+function kwFlag(flag, match) {
+  if (match === 'all_tokens') return 'partly'
+  if (match === 'exact') return 'yes'
+  if (flag === true || flag === '✓') return 'yes'
+  if (flag === false || flag === '✗') return 'no'
+  return 'unknown'
 }
 
-function normalizeComp(c) {
+function normalizePrimary(p) {
+  if (!p) return null
   return {
-    url: c.url ?? c.URL ?? '',
-    title: c.title ?? c['Venue Name'] ?? c.url ?? c.URL ?? '',
-    seo_score: c.seo_score ?? c['SEO Score'] ?? 0,
-    word_count: c.word_count ?? c['Word Count'] ?? null,
-    internal_links: c.internal_links ?? c['Internal Links'] ?? 0,
-    external_links: c.external_links ?? c['External Links'] ?? 0,
-    keyword_density: c.keyword_density ?? c['Keyword Density'] ?? null,
-    keyword_in_title: c.keyword_in_title ?? c['Keyword in Title'] ?? false,
-    keyword_in_meta: c.keyword_in_meta ?? c['Keyword in Meta'] ?? false,
-    keyword_in_h1: c.keyword_in_h1 ?? c['Keyword in H1'] ?? false,
+    you: true,
+    url: p.url ?? '',
+    title: p.title || p.url || '',
+    score: Number(p.seo_score ?? 0),
+    words: p.word_count ?? null,
+    kwTitle: kwFlag(p.keyword_in_title, p.keyword_match?.title),
+    kwH1: kwFlag(p.keyword_in_h1, p.keyword_match?.h1),
+    pos: positionInfo(rowPosition(p, 'google_position')),
+    error: null,
   }
 }
 
+function normalizeComp(c) {
+  const url = c.url ?? c.URL ?? ''
+  const blocked = !!c.error || c['Score Band'] === 'Blocked'
+  return {
+    you: false,
+    url,
+    title: c.title ?? c['Venue Name'] ?? url,
+    score: Number(c.seo_score ?? c['SEO Score'] ?? 0),
+    words: c.word_count ?? c['Word Count'] ?? null,
+    kwTitle: kwFlag(c.keyword_in_title ?? c['Keyword in Title'], c.keyword_match?.title),
+    kwH1: kwFlag(c.keyword_in_h1 ?? c['Keyword in H1'], c.keyword_match?.h1),
+    pos: positionInfo('SERP Rank' in c ? c['SERP Rank'] : c.google_position),
+    // New backends send user-safe text with error_kind; older ones sent raw exception text.
+    error: blocked ? ((c.error_kind && c.error) ? String(c.error) : BLOCKED_COPY) : null,
+    // When the site blocks our scanner: Google's own SEO check and its Google listing
+    google: blocked && c.google_check ? {
+      score: Number(c.google_check.seo_score),
+      checked: hostOf(c.google_check.checked_url || ''),
+    } : null,
+    listingKw: blocked && c.google_listing ? kwFlag(null, c.google_listing.keyword_in_title) : null,
+  }
+}
+
+// Keyword-in-title cell: from the page itself, or from Google's listing for blocked sites
+function TitleCell({ row }) {
+  if (!row.error) return <KwCell v={row.kwTitle} />
+  if (row.listingKw) {
+    return (
+      <span title="From the title Google shows for this page">
+        <KwCell v={row.listingKw === 'unknown' ? 'no' : row.listingKw} />
+        <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)' }}>Google listing</span>
+      </span>
+    )
+  }
+  return <span style={{ color: 'var(--text-muted)' }}>—</span>
+}
+
+function KwCell({ v }) {
+  if (v === 'yes') return <span style={{ color: '#22c55e', fontWeight: 700 }}>Yes</span>
+  if (v === 'partly') return <span style={{ color: '#f97316', fontWeight: 700 }}>Partly</span>
+  if (v === 'no') return <span style={{ color: '#ff6b75', fontWeight: 700 }}>No</span>
+  return <span style={{ color: 'var(--text-muted)' }}>—</span>
+}
+
+function ScoreCell({ row }) {
+  if (row.error && row.google) {
+    const g = scoreBand(row.google.score)
+    return (
+      <span title="Google Lighthouse SEO check. A different scale from our on-page score.">
+        <span style={{ color: g.color, fontWeight: 800 }}>{row.google.score}</span>
+        <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)' }}>Google check</span>
+      </span>
+    )
+  }
+  if (row.error) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+  const b = scoreBand(row.score)
+  return <span style={{ color: b.color, fontWeight: 800 }}>{row.score}</span>
+}
+
+function SiteCell({ row }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+        {row.you && (
+          <span style={{ fontSize: '10px', fontWeight: 800, color: '#fff', background: '#e63946', borderRadius: '4px', padding: '2px 6px', flexShrink: 0 }}>
+            You
+          </span>
+        )}
+        <span style={{ fontSize: '13px', color: '#fff', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {hostOf(row.url) || row.title}
+        </span>
+      </div>
+      {row.error && row.google && (
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px' }}>
+          Blocks our scanner, so this uses Google&rsquo;s own SEO check
+          {row.google.checked && row.google.checked !== hostOf(row.url) ? ` (Google checked ${row.google.checked})` : ''}.
+        </div>
+      )}
+      {row.error && !row.google && (
+        <div style={{ fontSize: '12px', color: '#f0a0a6', marginTop: '3px' }}>{row.error}</div>
+      )}
+    </div>
+  )
+}
+
+const th = { padding: '9px 12px', fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'left', borderBottom: '1px solid #222', whiteSpace: 'nowrap' }
+const td = { padding: '11px 12px', fontSize: '13px', color: '#d0d0d0', borderBottom: '1px solid #1a1a1a', verticalAlign: 'top' }
+
+function RowCard({ row }) {
+  return (
+    <li style={{
+      background: row.you ? 'rgba(230,57,70,0.07)' : '#111',
+      border: `1px solid ${row.you ? 'rgba(230,57,70,0.4)' : '#222'}`,
+      borderRadius: '10px', padding: '14px',
+    }}>
+      <SiteCell row={row} />
+      <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '8px 12px', margin: '10px 0 0', fontSize: '12px' }}>
+        {[
+          ['Google position', <span key="p">{row.pos.label}</span>],
+          ['On-page score', <ScoreCell key="s" row={row} />],
+          ['Words', row.error ? '—' : (row.words != null ? Number(row.words).toLocaleString() : '—')],
+          ['Keyword in title', <TitleCell key="t" row={row} />],
+          ['Keyword in H1', row.error ? '—' : <KwCell key="h" v={row.kwH1} />],
+        ].map(([k, v]) => (
+          <div key={k} style={{ minWidth: 0 }}>
+            <dt style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{k}</dt>
+            <dd style={{ margin: 0, color: '#e0e0e0' }}>{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </li>
+  )
+}
+
 export default function CompetitorResults({ data }) {
-  // data may be array of competitors or an object with a competitors key
   const raw = Array.isArray(data) ? data : (data?.competitors ?? data?.results ?? [])
   const competitors = raw.map(normalizeComp)
+  const primary = Array.isArray(data) ? null : normalizePrimary(data?.primary)
+  const locationLabel = data?.search_location?.label
 
-  if (!competitors || competitors.length === 0) {
+  if (competitors.length === 0 && !primary) {
     return (
-      <div
-        style={{
-          background: '#161616',
-          border: '1px solid #2a2a2a',
-          borderRadius: '12px',
-          padding: '48px',
-          textAlign: 'center',
-          color: '#606060',
-          marginTop: '24px',
-        }}
-      >
-        <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
-        <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>No Competitors Found</div>
-        <div style={{ fontSize: '13px' }}>Try a different URL or keyword to find competitor data.</div>
+      <div style={{ background: '#161616', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '40px 16px', textAlign: 'center', color: 'var(--text-body)', marginTop: '24px' }}>
+        <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#fff', margin: '0 0 8px' }}>No competitors found</h2>
+        <p style={{ fontSize: '13px' }}>Try a different URL or keyword to find competitor data.</p>
       </div>
     )
   }
 
-  const sorted = [...competitors].sort((a, b) => (b.seo_score ?? 0) - (a.seo_score ?? 0))
+  // Order by real Google position; sites with no data at all go last.
+  const noData = r => (r.error && !r.google ? 1 : 0)
+  const sorted = [...competitors].sort((a, b) =>
+    noData(a) - noData(b) || a.pos.sort - b.pos.sort || b.score - a.score)
+  const rows = primary ? [primary, ...sorted] : sorted
 
   return (
-    <div style={{ marginTop: '24px' }}>
-      {/* Leaderboard header */}
-      <div
-        style={{
-          background: '#161616',
-          border: '1px solid #2a2a2a',
-          borderRadius: '12px',
-          padding: '20px',
-          marginBottom: '16px',
-        }}
-      >
-        <div style={{ fontSize: '11px', color: '#606060', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '16px' }}>
-          COMPETITOR LEADERBOARD
-        </div>
+    <section aria-labelledby="vs-h" style={{ marginTop: '16px', background: '#161616', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '18px 16px' }}>
+      <h2 id="vs-h" style={{ fontSize: '16px', fontWeight: 800, color: '#fff', margin: '0 0 4px' }}>You vs competitors</h2>
+      <p style={{ fontSize: '12px', color: 'var(--text-body)', margin: '0 0 14px' }}>
+        {locationLabel ? `Searched Google in: ${locationLabel}` : (data?.location_msg || '')}
+        {(locationLabel || data?.location_msg) ? ' · ' : ''}
+        On-page score is our estimate from each page's HTML; Google position is the real search result.
+        Sites that block our scanner show Google&rsquo;s own SEO check instead.
+      </p>
 
-        {/* Table rows */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-          {/* Header row */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '40px 1fr 100px 100px 80px',
-              gap: '12px',
-              padding: '8px 12px',
-              borderBottom: '1px solid #222',
-            }}
-          >
-            {['#', 'URL', 'SEO Score', 'Words', 'Density'].map((h) => (
-              <div key={h} style={{ fontSize: '10px', fontWeight: 700, color: '#606060', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{h}</div>
+      {competitors.length === 0 && (
+        <p style={{ fontSize: '13px', color: 'var(--text-body)', margin: '0 0 12px' }}>
+          We couldn't find competitors for this keyword. Try a more specific keyword.
+        </p>
+      )}
+
+      <div className="comp-table" style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <caption className="sr-only">Your page compared with competitor pages</caption>
+          <thead>
+            <tr>
+              <th scope="col" style={th}>Site</th>
+              <th scope="col" style={th}>Google position</th>
+              <th scope="col" style={th}>On-page score</th>
+              <th scope="col" style={th}>Words</th>
+              <th scope="col" style={th}>Keyword in title</th>
+              <th scope="col" style={th}>Keyword in H1</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={`${row.url}-${i}`} style={row.you ? { background: 'rgba(230,57,70,0.08)', boxShadow: 'inset 3px 0 0 #e63946' } : undefined}>
+                <td style={{ ...td, maxWidth: '260px' }}><SiteCell row={row} /></td>
+                <td style={{ ...td, whiteSpace: 'nowrap' }}>{row.pos.label}</td>
+                <td style={td}><ScoreCell row={row} /></td>
+                <td style={td}>{row.error ? '—' : (row.words != null ? Number(row.words).toLocaleString() : '—')}</td>
+                <td style={td}><TitleCell row={row} /></td>
+                <td style={td}>{row.error ? '—' : <KwCell v={row.kwH1} />}</td>
+              </tr>
             ))}
-          </div>
-
-          {sorted.map((comp, i) => (
-            <div
-              key={i}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '40px 1fr 100px 100px 80px',
-                gap: '12px',
-                padding: '10px 12px',
-                borderBottom: i < sorted.length - 1 ? '1px solid #1a1a1a' : 'none',
-                alignItems: 'center',
-              }}
-            >
-              <RankBadge rank={i + 1} />
-              <div style={{ overflow: 'hidden' }}>
-                <div style={{ fontSize: '12px', color: '#fff', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {comp.title || comp.url}
-                </div>
-                <div style={{ fontSize: '10px', color: '#606060', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {comp.url}
-                </div>
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: 800, color: scoreColor(comp.seo_score ?? 0) }}>
-                {comp.seo_score ?? '—'}
-              </div>
-              <div style={{ fontSize: '12px', color: '#a0a0a0' }}>
-                {comp.word_count?.toLocaleString() ?? '—'}
-              </div>
-              <div style={{ fontSize: '12px', color: '#a0a0a0' }}>
-                {comp.keyword_density != null ? `${comp.keyword_density}%` : '—'}
-              </div>
-            </div>
-          ))}
-        </div>
+          </tbody>
+        </table>
       </div>
 
-      {/* Competitor cards grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-        {sorted.map((comp, i) => (
-          <CompetitorCard key={i} comp={comp} rank={i + 1} />
-        ))}
-      </div>
-    </div>
+      <ul className="comp-cards" style={{ listStyle: 'none', margin: 0, padding: 0, flexDirection: 'column', gap: '10px' }}>
+        {rows.map((row, i) => <RowCard key={`${row.url}-${i}`} row={row} />)}
+      </ul>
+    </section>
   )
 }

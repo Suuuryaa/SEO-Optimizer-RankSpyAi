@@ -141,26 +141,76 @@ def save_tracking(url: str, keyword: str, supabase_url: str = "", supabase_key: 
     return _sqlite_save_tracking(url, keyword)
 
 
-def check_rank(url: str, keyword: str, serper_key: str) -> dict:
-    endpoint = "https://google.serper.dev/search"
-    resp = requests.post(
-        endpoint,
-        json={"q": keyword, "num": 100},
-        headers={"X-API-KEY": serper_key, "Content-Type": "application/json"},
-        timeout=15,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+SERP_DEPTH_PAGES = 3   # Serper ignores num=100 now and returns ~10 per page
 
-    def _norm(u: str) -> str:
-        p = urlparse(u.lower())
-        return (p.netloc + p.path).rstrip("/")
 
-    target = _norm(url)
+def serp_organic_links(keyword: str, serper_key: str, pages: int = SERP_DEPTH_PAGES,
+                       gl: str | None = None, hl: str | None = None) -> list[str]:
+    """Organic result links in Google order, top ~10 x pages (1 Serper credit per page)."""
+    return [r["link"] for r in serp_organic_results(keyword, serper_key, pages, gl, hl)]
+
+
+def serp_organic_results(keyword: str, serper_key: str, pages: int = SERP_DEPTH_PAGES,
+                         gl: str | None = None, hl: str | None = None) -> list[dict]:
+    """Organic results in Google order: [{"link", "title", "snippet"}].
+
+    Google redirect entries (google.com/...) that Serper mixes into "organic" are
+    dropped so they don't take up positions.
+    """
+    links: list[dict] = []
+    payload = {"q": keyword, "gl": (gl or "us").lower()}   # US only when the country is unknown
+    if hl:
+        payload["hl"] = hl
+    for page in range(1, pages + 1):
+        resp = requests.post(
+            "https://google.serper.dev/search",
+            json={**payload, "page": page},
+            headers={"X-API-KEY": serper_key, "Content-Type": "application/json"},
+            timeout=15,
+        )
+        import spend; spend.serper_call(serper_key)
+        resp.raise_for_status()
+        organic = resp.json().get("organic", [])
+        if not organic:
+            break
+        for r in organic:
+            link = r.get("link", "")
+            host = (urlparse(link).hostname or "").lower()
+            if host.startswith("google.") or ".google." in host:
+                continue
+            links.append({"link": link, "title": r.get("title", ""), "snippet": r.get("snippet", "")})
+    return links
+
+
+def _site_and_path(u: str) -> tuple[str, str]:
+    p = urlparse(u.lower() if "//" in u else "https://" + u.lower())
+    host = p.hostname or ""
+    if host.startswith("www."):
+        host = host[4:]
+    return host, p.path.rstrip("/")
+
+
+def url_matches(target: str, result: str) -> bool:
+    """A search result counts for `target` only on the exact same host (www.
+    ignored) and, when target has a path, under that path. No substring
+    matching: "ample.com" is not "example.com", "example.com" is not "example.com.au"."""
+    t_host, t_path = _site_and_path(target)
+    r_host, r_path = _site_and_path(result)
+    if not t_host or t_host != r_host:
+        return False
+    return not t_path or r_path == t_path or r_path.startswith(t_path + "/")
+
+
+def check_rank(url: str, keyword: str, serper_key: str, gl: str | None = None, hl: str | None = None) -> dict:
+    if gl is None:
+        from location_utils import get_location_from_url
+        loc = get_location_from_url(url)
+        gl, hl = loc["serper_gl"], loc.get("serper_hl")
+    links = serp_organic_links(keyword, serper_key, gl=gl, hl=hl)
+
     position = None
-    for i, r in enumerate(data.get("organic", []), start=1):
-        ru = _norm(r.get("link", ""))
-        if target in ru or ru in target:
+    for i, link in enumerate(links, start=1):
+        if url_matches(url, link):
             position = i
             break
 
@@ -169,6 +219,7 @@ def check_rank(url: str, keyword: str, serper_key: str) -> dict:
         "found": position is not None,
         "url": url,
         "keyword": keyword,
+        "gl": gl,
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
 

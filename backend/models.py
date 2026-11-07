@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 import ipaddress as _ipaddress
 import re as _re_mod
-import socket as _socket
 from urllib.parse import urlparse as _urlparse_shared
 
 # Blocked cloud metadata and internal hostnames
@@ -19,12 +18,13 @@ _BLOCKED_HOSTS = frozenset({
 })
 
 def _is_private_ip(host: str) -> bool:
+    """True for any literal IP that is not a public (global) address."""
+    from net_safety import is_public_ip
     try:
-        addr = _ipaddress.ip_address(host)
-        return (addr.is_private or addr.is_loopback or
-                addr.is_link_local or addr.is_reserved or addr.is_unspecified)
+        _ipaddress.ip_address(host.split("%")[0])
     except ValueError:
         return False
+    return not is_public_ip(host)
 
 def _validate_url(v: str) -> str:
     """Shared hardened URL validator used by all request models."""
@@ -39,6 +39,9 @@ def _validate_url(v: str) -> str:
         raise ValueError("URL scheme must be http or https")
     if not parsed.netloc or "." not in parsed.netloc:
         raise ValueError("Invalid domain in URL")
+    if "\\" in parsed.netloc:
+        # urlparse and requests disagree on hosts like "127.0.0.1\\@example.com"
+        raise ValueError("URL contains invalid characters")
     if _re_mod.search(r'[\x00-\x1f]', parsed.netloc + parsed.path):
         raise ValueError("URL contains invalid characters")
     host = parsed.hostname or ""
@@ -48,13 +51,14 @@ def _validate_url(v: str) -> str:
     # Block known metadata endpoints by hostname
     if host.lower() in _BLOCKED_HOSTS:
         raise ValueError("Blocked host")
-    # DNS pre-resolution to catch SSRF via public-looking hostnames
+    # Every address the host resolves to (IPv4 and IPv6) must be public.
+    # Fail closed: a name we can't resolve is rejected here.
+    from net_safety import url_hosts_public, HostLookupError
     try:
-        resolved = _socket.gethostbyname(host)
-        if _is_private_ip(resolved):
+        if not url_hosts_public(v):
             raise ValueError("URL resolves to a private IP address")
-    except OSError:
-        pass  # DNS failure — let downstream handle it
+    except HostLookupError:
+        raise ValueError("Couldn't resolve that domain. Check the URL is spelled correctly.")
     return v
 
 
@@ -159,6 +163,8 @@ class AnalyzeRequest(BaseModel):
     geo:           bool = False
     strategy:      str  = "mobile"   # pagespeed strategy: mobile | desktop
     crawl_mode:    str  = "standard" # standard | javascript
+    fresh:         bool = False      # True bypasses the result cache (and is charged)
+    image_text:    bool = False      # read words inside images (paid feature; server flag IMAGE_TEXT_ENABLED)
     user_api_keys: Optional[UserApiKeys] = None
 
     @field_validator("url")
@@ -230,7 +236,9 @@ class CompetitorsResponse(BaseModel):
     competitors:    List[Dict[str, Any]]
     search_log:     List[str]
     location_msg:   str
+    search_location: Optional[Dict[str, Any]] = None   # {gl, hl, label}
     ai_summary:     Optional[str] = None
+    ai_summary_error: Optional[str] = None             # "unavailable" when the AI report failed
     pool_uses:      int
     pool_remaining: int
 

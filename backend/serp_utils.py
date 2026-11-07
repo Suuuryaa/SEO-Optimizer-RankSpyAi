@@ -26,6 +26,8 @@ def get_serp_results(keyword, api_key, location_params=None, max_retries=3):
     if location_params:
         if 'gl' in location_params:
             payload['gl'] = location_params['gl']  # Country code
+        if location_params.get('hl'):
+            payload['hl'] = location_params['hl']  # Interface language
         if 'location' in location_params:
             payload['location'] = location_params['location']  # City, Country
     
@@ -34,38 +36,29 @@ def get_serp_results(keyword, api_key, location_params=None, max_retries=3):
         'Content-Type': 'application/json'
     }
     
+    # Retry only what can succeed on a second try: 429, 5xx, timeouts and
+    # connection drops. Other errors (400 bad key/query, 403) fail at once.
+    last_error = None
     for attempt in range(max_retries):
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("organic", [])
-            
-            elif response.status_code == 429:
-                # Rate limited - wait and retry
-                wait_time = (attempt + 1) * 2
-                time.sleep(wait_time)
-                continue
-            
-            else:
-                raise Exception(f"SERPER API error: {response.status_code} - {response.text}")
-        
-        except requests.exceptions.Timeout:
+            import spend; spend.serper_call(api_key)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_error = e
             if attempt < max_retries - 1:
                 time.sleep(2)
-                continue
-            else:
-                raise Exception("SERPER API timeout after multiple retries")
-        
-        except Exception as e:
+            continue
+
+        if response.status_code == 200:
+            return response.json().get("organic", [])
+        if response.status_code == 429 or response.status_code >= 500:
+            last_error = Exception(f"SERPER API error: {response.status_code}")
             if attempt < max_retries - 1:
-                time.sleep(1)
-                continue
-            else:
-                raise e
-    
-    raise Exception("Failed to fetch SERP results after all retries")
+                time.sleep((attempt + 1) * 2)
+            continue
+        raise Exception(f"SERPER API error: {response.status_code}")
+
+    raise Exception(f"Failed to fetch SERP results after {max_retries} attempts: {last_error}")
 
 
 def _extract_domain(url):
@@ -83,10 +76,10 @@ def progressive_competitor_search(url, keyword, api_key, filter_func, min_compet
     """
     Find real business competitors for the given URL/keyword.
 
-    Strategy:
-      1. related:{domain} — Google's own "find similar sites" signal
-      2. keyword + domain name hint — contextual keyword search
-      3. Raw keyword global fallback
+    Strategy (every search uses the site's country, gl/hl):
+      0. Gemini names rivals (when a key is available)
+      1. "{brand} competitors {country}"
+      2. "{brand} alternatives"
 
     Returns:
         Tuple of (all_results, direct_competitors, search_log, location_msg)
@@ -97,6 +90,8 @@ def progressive_competitor_search(url, keyword, api_key, filter_func, min_compet
     domain_hint = domain.split(".")[0] if domain else ""
 
     location = get_location_from_url(url) if url else None
+    location_params = ({'gl': location['serper_gl'], 'hl': location.get('serper_hl')}
+                       if location else {'gl': 'us'})
     search_log = []
     all_results = []
     direct_competitors = []
@@ -111,9 +106,7 @@ def progressive_competitor_search(url, keyword, api_key, filter_func, min_compet
         try:
             gemini_competitors = get_competitors_via_gemini(url, keyword, gemini_api_key, location)
         except RuntimeError as e:
-            if "spending cap" in str(e).lower() or "429" in str(e):
-                raise  # Propagate spending cap to app for clear user message
-            search_log.append(f"⚠️ AI lookup failed ({e}), falling back to search...")
+            search_log.append(f"⚠️ AI lookup unavailable (quota/rate limit), falling back to search...")
             gemini_competitors = []
         except Exception as e:
             search_log.append(f"⚠️ AI lookup failed ({e}), falling back to search...")
@@ -138,26 +131,13 @@ def progressive_competitor_search(url, keyword, api_key, filter_func, min_compet
 
             search_log.append(f"⚠️ AI found {len(direct_competitors)} competitors, supplementing with search...")
 
-    # LEVEL 1: related:{domain} — finds genuinely similar websites
-    if domain:
-        search_query = f"related:{domain}"
-        search_log.append(f"🔍 Searching: {search_query}")
-        all_results = get_serp_results(search_query, api_key)
-        direct_competitors = filter_func(all_results, primary_url=url)
-
-        if len(direct_competitors) >= min_competitors:
-            return all_results, direct_competitors, search_log, f"🌐 Sites similar to {domain}"
-
-        search_log.append(f"⚠️ Only {len(direct_competitors)} found via related search, expanding...")
-
     # LEVEL 2: "{brand} competitors {country}" — domain-contextual, ignores misleading keyword
     if domain_hint:
         country_str = location['country_name'] if location and location.get('country_name') else ""
         search_query = f"{domain_hint} competitors {country_str}".strip()
         search_log.append(f"🔄 Searching: {search_query}")
 
-        location_params = {'gl': location['serper_gl']} if location else {}
-        results2 = get_serp_results(search_query, api_key, location_params or None)
+        results2 = get_serp_results(search_query, api_key, location_params)
         seen = {r["link"] for r in all_results}
         for r in results2:
             if r["link"] not in seen:
@@ -174,7 +154,7 @@ def progressive_competitor_search(url, keyword, api_key, filter_func, min_compet
     if domain_hint:
         search_query = f"{domain_hint} alternatives"
         search_log.append(f"🔄 Searching: {search_query}")
-        results3 = get_serp_results(search_query, api_key)
+        results3 = get_serp_results(search_query, api_key, location_params)
         seen = {r["link"] for r in all_results}
         for r in results3:
             if r["link"] not in seen:

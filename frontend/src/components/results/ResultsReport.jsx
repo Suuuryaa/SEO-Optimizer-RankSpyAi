@@ -1,17 +1,186 @@
 import { useState } from 'react'
-import SemanticScore from './SemanticScore'
 import GeoScorePanel from './GeoScorePanel'
+import ImageTextPanel from './ImageTextPanel'
 import MetaSuggestPanel from './MetaSuggestPanel'
 import SchemaPanel from './SchemaPanel'
 import RankTracker from '../RankTracker'
 import LocalSeoPanel from './LocalSeoPanel'
 import DeepCrawlPanel from './DeepCrawlPanel'
+import NextFixes, { PriorityBadge } from './NextFixes'
+import IndexabilityBanner from './IndexabilityBanner'
 import { analyzeLocalSeo } from '../../api'
+import { scoreBand, verdictFor, sortRecs, whyText, relativeTime } from '../../lib/score'
 
-export default function ResultsReport({ data }) {
+const TASKS_PREVIEW = 10
+const RANK_TRACKER_ON = import.meta.env.VITE_RANK_TRACKER === 'on'
+
+const STATUS = {
+  pass: { color: '#22c55e', label: 'OK' },
+  warn: { color: '#f97316', label: 'Needs attention' },
+  fail: { color: '#ff6b75', label: 'Missing' },
+  optional: { color: '#8a8a8a', label: 'Optional' },
+  info: { color: '#8a8a8a', label: '—' },
+}
+
+const MISSING_TITLE = ['', 'No title found']
+const MISSING_META = ['', 'No meta description found']
+
+function hasTitle(data) {
+  if (typeof data.has_title === 'boolean') return data.has_title
+  return !MISSING_TITLE.includes(String(data.title ?? '').trim())
+}
+
+function hasMeta(data) {
+  if (typeof data.has_meta_description === 'boolean') return data.has_meta_description
+  return !MISSING_META.includes(String(data.meta_description ?? '').trim())
+}
+
+// Keyword check: exact = pass; all words present but not as a phrase = warn.
+function kwCheck(data, flag, field) {
+  if (!String(data.keyword ?? '').trim()) return { status: 'info', value: 'No keyword given' }
+  const m = data.keyword_match?.[field]
+  if (m === 'all_tokens') return { status: 'warn', value: 'All words present, not as an exact phrase' }
+  if (m === 'exact' || flag) return { status: 'pass', value: 'Found' }
+  return { status: 'fail', value: 'Not found' }
+}
+
+function densityCheck(data) {
+  const d = Number(data.keyword_density)
+  if (!String(data.keyword ?? '').trim() || data.keyword_density == null || Number.isNaN(d)) {
+    return { status: 'info', value: '—' }
+  }
+  if (data.keyword_stuffing === true || d > 3.5) return { status: 'fail', value: `${d}% (possible stuffing)` }
+  if (d > 2.5) return { status: 'warn', value: `${d}% (a little high)` }
+  if (d >= 0.5) return { status: 'pass', value: `${d}%` }
+  if (d > 0) return { status: 'warn', value: `${d}% (low)` }
+  return { status: 'fail', value: '0% (not used in the text)' }
+}
+
+// Every check appears in exactly one group.
+function buildChecks(data) {
   const tech = data.technical_seo || {}
-  const recs = data.recommendations || []
+  const titleOk = hasTitle(data)
+  const metaOk = hasMeta(data)
+  const tl = Number(data.title_length) || 0
+  const ml = Number(data.meta_length) || 0
+  const wc = Number(data.word_count) || 0
+  const noindex = data.indexability?.indexable === false || !!tech.robots_noindex
+  const kwTitle = kwCheck(data, data.keyword_in_title, 'title')
+  const kwMeta = kwCheck(data, data.keyword_in_meta, 'meta')
+  const kwH1 = kwCheck(data, data.keyword_in_h1, 'h1')
+  const h1 = tech.h1_count
 
+  return [
+    {
+      title: 'Meta data',
+      checks: [
+        { label: 'Page title', importance: 'Very important', ...(!titleOk ? { status: 'fail', value: 'Missing' } : tl >= 30 && tl <= 60 ? { status: 'pass', value: `${tl} chars` } : { status: 'warn', value: `${tl} chars (aim for 30–60)` }) },
+        { label: 'Meta description', importance: 'Very important', ...(!metaOk ? { status: 'fail', value: 'Missing' } : ml >= 120 && ml <= 160 ? { status: 'pass', value: `${ml} chars` } : { status: 'warn', value: `${ml} chars (aim for 120–160)` }) },
+        { label: 'Keyword in title', importance: 'Very important', ...kwTitle },
+        { label: 'Keyword in meta description', importance: 'Important', ...kwMeta },
+        { label: 'Canonical URL', importance: 'Important', status: tech.has_canonical ? 'pass' : 'warn', value: tech.has_canonical ? 'Set' : 'Not set' },
+        { label: 'Robots meta / indexing', importance: 'Very important', status: noindex ? 'fail' : 'pass', value: noindex ? 'Not indexable' : 'Indexable' },
+      ],
+    },
+    {
+      title: 'Content',
+      checks: [
+        { label: 'Word count', importance: 'Important', status: wc >= 300 ? 'pass' : wc >= 150 ? 'warn' : 'fail', value: `${wc.toLocaleString()} words` },
+        { label: 'Keyword in H1', importance: 'Very important', ...kwH1 },
+        { label: 'Keyword density', importance: 'Important', ...densityCheck(data) },
+        { label: 'H1 headings', importance: 'Very important', status: h1 === 1 ? 'pass' : !h1 ? 'fail' : 'warn', value: `${h1 ?? 0} found` },
+        { label: 'Image alt text', importance: 'Important', status: !data.missing_alt ? 'pass' : 'warn', value: !data.missing_alt ? 'All present' : `${data.missing_alt} missing` },
+      ],
+    },
+    {
+      title: 'Links & headings',
+      checks: [
+        { label: 'Internal links', importance: 'Important', status: data.internal_links >= 2 ? 'pass' : 'warn', value: `${data.internal_links ?? 0} found` },
+        { label: 'External links', importance: 'Nice to have', status: data.external_links >= 1 ? 'pass' : 'optional', value: `${data.external_links ?? 0} found` },
+        { label: 'H2 headings', importance: 'Important', status: tech.h2_count > 0 ? 'pass' : 'warn', value: `${tech.h2_count ?? 0} found` },
+        { label: 'H3 headings', importance: 'Nice to have', status: 'info', value: `${tech.h3_count ?? 0} found` },
+      ],
+    },
+    {
+      title: 'Technical',
+      checks: [
+        { label: 'HTTPS', importance: 'Very important', status: tech.https_enabled ? 'pass' : 'fail', value: tech.https_enabled ? 'Secure' : 'Not secure' },
+        { label: 'Mobile viewport', importance: 'Very important', status: tech.mobile_viewport ? 'pass' : 'fail', value: tech.mobile_viewport ? 'Set' : 'Missing' },
+        { label: 'Language declaration', importance: 'Nice to have', status: tech.has_lang ? 'pass' : 'optional', value: tech.lang_attribute || (tech.has_lang ? 'Set' : 'Not set') },
+      ],
+    },
+    {
+      title: 'Social & schema',
+      checks: [
+        { label: 'Structured data (schema)', importance: 'Nice to have', status: tech.has_schema ? 'pass' : 'optional', value: tech.has_schema ? 'Found' : 'Not found' },
+        { label: 'Open Graph title', importance: 'Nice to have', status: tech.has_og_title ? 'pass' : 'optional', value: tech.has_og_title ? 'Present' : 'Missing' },
+        { label: 'Open Graph description', importance: 'Nice to have', status: tech.has_og_description ? 'pass' : 'optional', value: tech.has_og_description ? 'Present' : 'Missing' },
+        { label: 'Open Graph image', importance: 'Nice to have', status: tech.has_og_image ? 'pass' : 'optional', value: tech.has_og_image ? 'Present' : 'Missing' },
+        { label: 'Twitter Card', importance: 'Nice to have', status: tech.has_twitter_card ? 'pass' : 'optional', value: tech.has_twitter_card ? 'Present' : 'Missing' },
+      ],
+    },
+  ]
+}
+
+function groupStats(group) {
+  const counted = group.checks.filter(c => c.status !== 'info')
+  const passed = counted.filter(c => c.status === 'pass').length
+  const required = counted.filter(c => c.status !== 'optional')
+  const reqPassed = required.filter(c => c.status === 'pass').length
+  const color = required.length === 0
+    ? '#8a8a8a'
+    : reqPassed === required.length ? '#22c55e' : reqPassed / required.length >= 0.5 ? '#f97316' : '#ff6b75'
+  return { passed, total: counted.length, color }
+}
+
+function CheckItem({ label, value, status, importance }) {
+  const s = STATUS[status] || STATUS.info
+  return (
+    <li className="check-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: '6px 16px', alignItems: 'center', padding: '11px 18px', borderBottom: '1px solid #181818' }}>
+      <div style={{ minWidth: 0 }}>
+        <span style={{ fontSize: '13px', color: '#d0d0d0' }}>{label}</span>
+        {value != null && (
+          <span style={{ fontSize: '12px', color: 'var(--text-body)', marginLeft: '8px', wordBreak: 'break-word' }}>{value}</span>
+        )}
+        {importance && (
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{importance}</div>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+        <span aria-hidden="true" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+        <span style={{ fontSize: '11px', color: s.color, fontWeight: 700, letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>{s.label}</span>
+      </div>
+    </li>
+  )
+}
+
+function CheckGroup({ group }) {
+  const { passed, total, color } = groupStats(group)
+  return (
+    <div style={{ background: '#111', border: '1px solid #222', borderRadius: '10px', overflow: 'hidden', marginBottom: '12px' }}>
+      <div style={{ background: '#161616', padding: '13px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderBottom: '1px solid #222', flexWrap: 'wrap' }}>
+        <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#fff', margin: 0 }}>{group.title}</h3>
+        <span style={{ fontSize: '12px', color, fontWeight: 700 }}>{passed} of {total} checks passed</span>
+      </div>
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        {group.checks.map(c => <CheckItem key={c.label} {...c} />)}
+      </ul>
+    </div>
+  )
+}
+
+const sectionH2 = { fontSize: '16px', fontWeight: 800, color: '#fff', margin: '0 0 14px' }
+const smallBtn = {
+  background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '8px 12px',
+  color: '#e0e0e0', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+}
+
+export default function ResultsReport({ data, headingRef, onRescan, onNewScan, onCopyLink, copied, rescanning }) {
+  const tech = data.technical_seo || {}
+  const recs = sortRecs(data.recommendations)
+  const freeRescans = typeof data.free_rescans_left === 'number' ? data.free_rescans_left : 0
+
+  const [showAllTasks, setShowAllTasks] = useState(false)
   const [localData, setLocalData] = useState(null)
   const [localLoading, setLocalLoading] = useState(false)
   const [localError, setLocalError] = useState(null)
@@ -23,369 +192,253 @@ export default function ResultsReport({ data }) {
       const result = await analyzeLocalSeo({ url: data.url, keyword: data.keyword })
       setLocalData(result)
     } catch (err) {
-      setLocalError('Local SEO check failed. Please try again.')
+      setLocalError(err?.message || 'Local SEO check failed. Please try again.')
     } finally {
       setLocalLoading(false)
     }
   }
 
-  function scoreColor(s) {
-    if (s >= 70) return '#22c55e'
-    if (s >= 40) return '#f97316'
-    return '#e63946'
-  }
-
-  function pct(booleans) {
-    const vals = booleans.map(b => (b ? 1 : 0))
-    return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100)
-  }
-
-  const metaScore = pct([
-    data.title_length >= 30 && data.title_length <= 60,
-    data.meta_length >= 50 && data.meta_length <= 160,
-    !!data.keyword_in_title,
-    !!data.keyword_in_meta,
-    !!tech.has_canonical,
-    !tech.robots_noindex,
-  ])
-
-  const pageScore = pct([
-    data.word_count >= 300,
-    data.missing_alt === 0,
-    !!data.keyword_in_h1,
-    !!tech.has_schema,
-    !!tech.mobile_viewport,
-  ])
-
-  const linkScore = pct([
-    tech.h1_count === 1,
-    tech.h2_count > 0,
-    data.internal_links >= 2,
-    data.external_links >= 1,
-  ])
-
-  const serverScore = pct([
-    !!tech.https_enabled,
-    !!tech.mobile_viewport,
-    !!tech.has_lang,
-    !!tech.has_og_title,
-    !tech.robots_noindex,
-  ])
-
-  const keywordScore = pct([
-    !!data.keyword_in_title,
-    !!data.keyword_in_meta,
-    !!data.keyword_in_h1,
-    data.keyword_density > 0 && data.keyword_density < 5,
-  ])
-
-  const socialScore = pct([
-    !!tech.has_og_title,
-    !!tech.has_og_description,
-    !!tech.has_og_image,
-    !!tech.has_twitter_card,
-    !!tech.has_schema,
-  ])
-
-  const categories = [
-    { label: 'Meta data', score: metaScore },
-    { label: 'Page quality', score: pageScore },
-    { label: 'Link structure', score: linkScore },
-    { label: 'Server config', score: serverScore },
-    { label: 'Keyword usage', score: keywordScore },
-    { label: 'Social / Schema', score: socialScore },
-  ]
-
-  const priorityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
-  const sortedRecs = [...recs]
-    .sort((a, b) => (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99))
-    .slice(0, 10)
-
-  function badgeStyle(p) {
-    if (p === 'CRITICAL' || p === 'HIGH') return { bg: 'rgba(230,57,70,0.12)', color: '#e63946', border: 'rgba(230,57,70,0.3)', label: 'Error' }
-    if (p === 'MEDIUM') return { bg: 'rgba(234,179,8,0.12)', color: '#eab308', border: 'rgba(234,179,8,0.3)', label: 'Warning' }
-    return { bg: 'rgba(59,130,246,0.12)', color: '#3b82f6', border: 'rgba(59,130,246,0.3)', label: 'Tip' }
-  }
-
-  function CheckItem({ label, value, pass, warn, importance }) {
-    const status = pass === null ? 'info' : pass ? 'pass' : warn ? 'warn' : 'fail'
-    const color = status === 'pass' ? '#22c55e' : status === 'warn' ? '#f97316' : status === 'info' ? '#555' : '#e63946'
-    const statusLabel = status === 'pass' ? 'OK' : status === 'warn' ? 'Warning' : status === 'info' ? '—' : 'Error'
-
-    return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '16px', alignItems: 'center', padding: '11px 18px', borderBottom: '1px solid #181818' }}>
-        <div>
-          <span style={{ fontSize: '13px', color: '#c8c8c8' }}>{label}</span>
-          {value != null && (
-            <span style={{ fontSize: '12px', color: '#555', marginLeft: '8px' }}>{value}</span>
-          )}
-        </div>
-        {importance && (
-          <span style={{ fontSize: '10px', color: '#444', fontWeight: 600, whiteSpace: 'nowrap' }}>{importance}</span>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: '64px', justifyContent: 'flex-end' }}>
-          <span style={{
-            display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
-            background: color, flexShrink: 0
-          }} />
-          <span style={{ fontSize: '11px', color, fontWeight: 700, letterSpacing: '0.03em' }}>{statusLabel}</span>
-        </div>
-      </div>
-    )
-  }
-
-  function CheckGroup({ title, score, checks }) {
-    const c = scoreColor(score)
-    const barDeg = Math.round(score * 3.6)
-    return (
-      <div style={{ background: '#111', border: '1px solid #222', borderRadius: '10px', overflow: 'hidden', marginBottom: '12px' }}>
-        <div style={{ background: '#161616', padding: '13px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #222' }}>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>{title}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '100px', height: '5px', background: '#252525', borderRadius: '99px', overflow: 'hidden' }}>
-              <div style={{ width: `${score}%`, height: '100%', background: c, borderRadius: '99px', transition: 'width 0.8s ease' }} />
-            </div>
-            <span style={{ fontSize: '13px', color: c, fontWeight: 700, minWidth: '36px', textAlign: 'right' }}>{score}%</span>
-          </div>
-        </div>
-        {checks}
-      </div>
-    )
-  }
-
-  const mainScore = data.seo_score ?? 0
+  const groups = buildChecks(data)
+  const mainScore = Number(data.seo_score) || 0
+  const band = scoreBand(mainScore)
   const scoreAngle = mainScore * 3.6
+  const shownRecs = showAllTasks ? recs : recs.slice(0, TASKS_PREVIEW)
+  const titleOk = hasTitle(data)
+  const metaOk = hasMeta(data)
 
   return (
     <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-      {/* ── Semantic Relevance (HuggingFace) ── */}
-      {data.semantic && <SemanticScore semantic={data.semantic} />}
+      {/* ── Header ── */}
+      <div style={{ background: '#161616', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '14px 18px', display: 'flex', flexWrap: 'wrap', gap: '12px 24px', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', letterSpacing: '0.06em', marginBottom: '2px' }}>PAGE</div>
+          <div style={{ fontSize: '13px', color: '#fff', fontWeight: 600, wordBreak: 'break-all' }}>{data.url}</div>
+          {data.keyword && (
+            <div style={{ fontSize: '12px', color: 'var(--text-body)', marginTop: '4px' }}>
+              Keyword: <span style={{ color: '#ff6b75', fontWeight: 600 }}>"{data.keyword}"</span>
+            </div>
+          )}
+          {data.cached === true && (
+            <div style={{ fontSize: '12px', color: 'var(--text-body)', marginTop: '6px' }}>
+              {data.cached_at ? `Result from ${relativeTime(data.cached_at)}` : 'Saved result'}
+            </div>
+          )}
+          {onRescan && (
+            <div className="no-print" style={{ fontSize: '12px', color: 'var(--text-body)', marginTop: '6px' }}>
+              Fixed something?{' '}
+              <button
+                type="button"
+                onClick={onRescan}
+                disabled={rescanning}
+                style={{ background: 'none', border: 'none', color: '#ff8a92', fontWeight: 700, textDecoration: 'underline', cursor: rescanning ? 'default' : 'pointer', padding: 0, fontSize: '12px', fontFamily: 'inherit' }}
+              >
+                {freeRescans > 0 ? 'Rescan for free' : 'Rescan'}
+              </button>
+              {' '}
+              <span style={{ color: 'var(--text-muted)' }}>
+                {freeRescans > 0
+                  ? `(${freeRescans} free rescan${freeRescans === 1 ? '' : 's'} of this page left today)`
+                  : typeof data.scans_remaining === 'number'
+                    ? `(uses 1 of your ${data.scans_remaining} scans left today)`
+                    : ''}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="no-print btn-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button type="button" style={smallBtn} onClick={onNewScan}>New scan</button>
+          <button type="button" style={smallBtn} onClick={onCopyLink}>{copied ? '✓ Link copied' : 'Copy link'}</button>
+          <button type="button" style={smallBtn} onClick={() => window.print()}>Save as PDF</button>
+        </div>
+      </div>
 
-      {/* ── Deep Crawl results (JS mode) ── */}
-      {data.deep_crawl && <DeepCrawlPanel data={data.deep_crawl} />}
+      {/* ── Indexability ── */}
+      <IndexabilityBanner indexability={data.indexability} uncapped={data.seo_score_uncapped} />
 
-      {/* ── GEO Score (AI Visibility) ── */}
-      {data.geo_score && <GeoScorePanel geo={data.geo_score} />}
-
-      {/* ── Section 1: Score + Categories ── */}
-      <div style={{ background: '#111', border: '1px solid #222', borderRadius: '12px', padding: '28px 32px' }}>
-        <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-
-          {/* Score donut */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-            <div style={{
-              width: '140px', height: '140px', borderRadius: '50%',
-              background: `conic-gradient(${scoreColor(mainScore)} 0deg ${scoreAngle}deg, #1e1e1e ${scoreAngle}deg 360deg)`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: `0 0 0 2px #111, 0 0 24px ${scoreColor(mainScore)}22`,
-            }}>
+      {/* ── Score + verdict + breakdown ── */}
+      <section aria-labelledby="score-h" style={{ background: '#111', border: '1px solid #222', borderRadius: '12px', padding: '24px' }}>
+        <h2 id="score-h" ref={headingRef} tabIndex={-1} style={sectionH2}>Your on-page score</h2>
+        <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', flexShrink: 0, margin: '0 auto' }}>
+            <div
+              role="img"
+              aria-label={`On-page score ${mainScore} of 100`}
+              style={{
+                width: '140px', height: '140px', borderRadius: '50%',
+                background: `conic-gradient(${band.color} 0deg ${scoreAngle}deg, #1e1e1e ${scoreAngle}deg 360deg)`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: `0 0 0 2px #111, 0 0 24px ${band.color}22`,
+              }}
+            >
               <div style={{
                 width: '104px', height: '104px', borderRadius: '50%', background: '#111',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',
               }}>
-                <span style={{ fontSize: '34px', fontWeight: 900, color: scoreColor(mainScore), lineHeight: 1 }}>{mainScore}</span>
-                <span style={{ fontSize: '9px', color: '#555', letterSpacing: '0.08em', fontWeight: 700 }}>of 100</span>
+                <span style={{ fontSize: '34px', fontWeight: 900, color: band.color, lineHeight: 1 }}>{mainScore}</span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 700 }}>of 100</span>
               </div>
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '11px', color: '#606060', letterSpacing: '0.1em', fontWeight: 700 }}>ON-PAGE SCORE</div>
-              {data.score_band && (
-                <div style={{ fontSize: '12px', color: scoreColor(mainScore), fontWeight: 700, marginTop: '4px', textTransform: 'capitalize' }}>{data.score_band}</div>
-              )}
-            </div>
+            <div style={{ fontSize: '12px', color: band.color, fontWeight: 700 }}>{band.label}</div>
           </div>
 
-          {/* Category bars — 2-column grid */}
-          <div style={{ flex: 1, minWidth: '260px' }}>
-            <div style={{ fontSize: '11px', color: '#555', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '16px' }}>SCORE BREAKDOWN</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 32px' }}>
-              {categories.map(cat => (
-                <div key={cat.label}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '12px', color: '#a0a0a0', fontWeight: 500 }}>{cat.label}</span>
-                    <span style={{ fontSize: '12px', fontWeight: 800, color: scoreColor(cat.score) }}>{cat.score}%</span>
-                  </div>
-                  <div style={{ height: '5px', background: '#1e1e1e', borderRadius: '99px', overflow: 'hidden' }}>
-                    <div style={{ width: `${cat.score}%`, height: '100%', background: scoreColor(cat.score), borderRadius: '99px', transition: 'width 0.8s ease' }} />
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+            <p style={{ fontSize: '15px', color: '#e8e8e8', lineHeight: 1.55, margin: '0 0 18px' }}>
+              {verdictFor(mainScore, data.keyword)}
+            </p>
+            <h3 style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.1em', margin: '0 0 10px' }}>CHECKS BY AREA</h3>
+            <ul className="grid-auto" style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px 24px' }}>
+              {groups.map(g => {
+                const st = groupStats(g)
+                return (
+                  <li key={g.title} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12px' }}>
+                    <span style={{ color: 'var(--text-body)' }}>{g.title}</span>
+                    <span style={{ color: st.color, fontWeight: 700, whiteSpace: 'nowrap' }}>{st.passed} of {st.total} passed</span>
+                  </li>
+                )
+              })}
+            </ul>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* ── Section 2: Page Info Card ── */}
-      <div style={{ background: '#111', border: '1px solid #222', borderRadius: '12px', padding: '22px' }}>
-        <div style={{ fontSize: '11px', color: '#555', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '18px' }}>PAGE INFORMATION</div>
+      {/* ── Your next 3 fixes ── */}
+      <NextFixes recs={recs} />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '18px' }}>
-          {[
-            { label: 'Page title', value: data.title || 'Not found', bad: !data.title },
-            { label: 'Meta description', value: data.meta_description || 'Not found', bad: !data.meta_description },
-            { label: 'Page URL', value: data.url || '—', bad: false },
-          ].map(row => (
-            <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '12px', alignItems: 'flex-start' }}>
-              <span style={{ fontSize: '12px', color: '#555', fontWeight: 600, paddingTop: '1px' }}>{row.label}</span>
-              <span style={{ fontSize: '13px', color: row.bad ? '#e63946' : '#d0d0d0', wordBreak: 'break-all', lineHeight: 1.5 }}>{row.value}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Stat chips */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {[
-            { label: 'Status', val: tech.https_enabled ? '200 OK' : 'HTTP', color: tech.https_enabled ? '#22c55e' : '#f97316', bg: tech.https_enabled ? 'rgba(34,197,94,0.1)' : 'rgba(249,115,22,0.1)', border: tech.https_enabled ? 'rgba(34,197,94,0.25)' : 'rgba(249,115,22,0.25)' },
-            { label: 'Words', val: data.word_count?.toLocaleString() ?? '—', color: '#a0a0a0', bg: '#161616', border: '#2a2a2a' },
-            { label: 'Language', val: tech.lang_attribute || '—', color: '#a0a0a0', bg: '#161616', border: '#2a2a2a' },
-            { label: 'H1 tags', val: tech.h1_count ?? '—', color: tech.h1_count === 1 ? '#22c55e' : '#f97316', bg: '#161616', border: '#2a2a2a' },
-            { label: 'Mobile', val: tech.mobile_viewport ? 'Yes' : 'No', color: tech.mobile_viewport ? '#22c55e' : '#e63946', bg: '#161616', border: '#2a2a2a' },
-            { label: 'Canonical', val: tech.has_canonical ? 'Yes' : 'No', color: tech.has_canonical ? '#22c55e' : '#e63946', bg: '#161616', border: '#2a2a2a' },
-          ].map(chip => (
-            <div key={chip.label} style={{ background: chip.bg, border: `1px solid ${chip.border}`, borderRadius: '8px', padding: '8px 14px', textAlign: 'center', minWidth: '64px' }}>
-              <div style={{ fontSize: '10px', color: '#555', letterSpacing: '0.06em', marginBottom: '3px', fontWeight: 600 }}>{chip.label}</div>
-              <div style={{ fontSize: '13px', fontWeight: 800, color: chip.color }}>{String(chip.val)}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Section 3: TO-DO / Task List ── */}
-      {sortedRecs.length > 0 && (
-        <div style={{ background: '#111', border: '1px solid #222', borderRadius: '12px', overflow: 'hidden' }}>
+      {/* ── Full task list ── */}
+      {recs.length > 0 && (
+        <section aria-labelledby="tasks-h" style={{ background: '#111', border: '1px solid #222', borderRadius: '12px', overflow: 'hidden' }}>
           <div style={{ background: '#161616', padding: '14px 20px', borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>Tasks sorted by priority</span>
+            <h2 id="tasks-h" style={{ ...sectionH2, margin: 0, fontSize: '14px' }}>All tasks, by priority</h2>
             <span style={{
-              fontSize: '11px', fontWeight: 700, color: '#555', background: '#1e1e1e',
+              fontSize: '11px', fontWeight: 700, color: 'var(--text-body)', background: '#1e1e1e',
               border: '1px solid #2a2a2a', padding: '1px 8px', borderRadius: '99px',
-            }}>{sortedRecs.length}</span>
+            }}>{recs.length}</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table className="tasks-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#0e0e0e' }}>
-                  {['Status', 'Issue', 'Action'].map(h => (
-                    <th key={h} style={{ padding: '9px 16px', fontSize: '10px', color: '#555', fontWeight: 700, letterSpacing: '0.08em', textAlign: 'left', borderBottom: '1px solid #1e1e1e', textTransform: 'uppercase' }}>{h}</th>
+                  {['Priority', 'Task', 'Why it matters'].map(h => (
+                    <th key={h} scope="col" style={{ padding: '9px 16px', fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.08em', textAlign: 'left', borderBottom: '1px solid #1e1e1e', textTransform: 'uppercase' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {sortedRecs.map((rec, i) => {
-                  const b = badgeStyle(rec.priority)
-                  return (
-                    <tr key={i} style={{ borderBottom: '1px solid #181818' }}>
-                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap', width: '80px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 800, letterSpacing: '0.04em', padding: '3px 10px', borderRadius: '99px', background: b.bg, color: b.color, border: `1px solid ${b.border}` }}>
-                          {b.label}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <div style={{ fontSize: '13px', color: '#e0e0e0', fontWeight: 600, marginBottom: '3px' }}>{rec.issue}</div>
-                        <div style={{ fontSize: '12px', color: '#555' }}>{rec.fix}</div>
-                      </td>
-                      <td style={{ padding: '12px 16px', fontSize: '12px', color: '#707070', minWidth: '160px' }}>{rec.impact}</td>
-                    </tr>
-                  )
-                })}
+                {shownRecs.map((rec, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #181818' }}>
+                    <td data-label="Priority" style={{ padding: '12px 16px', whiteSpace: 'nowrap', width: '110px', verticalAlign: 'top' }}>
+                      <PriorityBadge priority={rec.priority} />
+                    </td>
+                    <td data-label="Task" style={{ padding: '12px 16px', verticalAlign: 'top' }}>
+                      <div style={{ fontSize: '13px', color: '#e8e8e8', fontWeight: 600, marginBottom: '3px' }}>{rec.issue}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-body)' }}>{rec.fix}</div>
+                    </td>
+                    <td data-label="Why it matters" style={{ padding: '12px 16px', fontSize: '12px', color: 'var(--text-body)', minWidth: '160px', verticalAlign: 'top' }}>{whyText(rec.impact)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-        </div>
+          {recs.length > TASKS_PREVIEW && (
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #1e1e1e' }} className="no-print">
+              <button type="button" style={smallBtn} aria-expanded={showAllTasks} onClick={() => setShowAllTasks(v => !v)}>
+                {showAllTasks ? 'Show fewer' : `Show all ${recs.length}`}
+              </button>
+            </div>
+          )}
+        </section>
       )}
 
-      {/* ── AI Tools: Meta Generator + Schema ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-        <MetaSuggestPanel url={data.url} keyword={data.keyword} currentTitle={data.title} currentMeta={data.meta_description} />
-        <SchemaPanel url={data.url} keyword={data.keyword} />
-      </div>
-
-      {/* ── Local SEO ── */}
-      <div>
-        {!localData && (
-          <button
-            onClick={handleCheckLocalSeo}
-            disabled={localLoading}
-            style={{
-              width: '100%',
-              padding: '12px 20px',
-              background: localLoading ? '#1a1a1a' : '#161616',
-              border: '1px solid #2a2a2a',
-              borderRadius: '10px',
-              color: localLoading ? '#555' : '#a0a0a0',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: localLoading ? 'default' : 'pointer',
-              letterSpacing: '0.02em',
-              transition: 'background 0.15s, color 0.15s',
-            }}
-          >
-            {localLoading ? 'Checking local SEO signals\u2026' : '\uD83D\uDCCD Check Local SEO'}
-          </button>
-        )}
-        {localError && (
-          <div style={{ fontSize: '12px', color: '#e63946', marginTop: '8px', textAlign: 'center' }}>{localError}</div>
-        )}
-        {localData && <LocalSeoPanel data={localData} />}
-        {localData && localData.local_score >= 80 && !localData.local_checks?.some(c => !c.pass) && (
-          <div style={{ background: '#111', border: '1px solid #222', borderRadius: '10px', padding: '14px 20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <span style={{ color: '#22c55e', fontSize: '16px' }}>&#x2713;</span>
-            <span style={{ fontSize: '13px', color: '#22c55e', fontWeight: 600 }}>Local SEO looks great — score {localData.local_score}/100, all checks passing.</span>
+      {/* ── Detailed checks ── */}
+      <details className="details-block" style={{ background: '#0f0f0f', border: '1px solid #222', borderRadius: '12px', padding: '0' }}>
+        <summary style={{ padding: '16px 20px', cursor: 'pointer', fontSize: '14px', fontWeight: 800, color: '#fff' }}>
+          <h2 style={{ display: 'inline', fontSize: '14px', margin: 0 }}>Detailed checks and page info</h2>
+        </summary>
+        <div style={{ padding: '0 16px 16px' }}>
+          <div style={{ background: '#111', border: '1px solid #222', borderRadius: '10px', padding: '18px', marginBottom: '12px' }}>
+            <h3 style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.1em', margin: '0 0 14px' }}>PAGE INFORMATION</h3>
+            <dl style={{ display: 'flex', flexDirection: 'column', gap: '10px', margin: '0 0 16px' }}>
+              {[
+                { label: 'Page title', value: titleOk ? data.title : 'Missing', bad: !titleOk },
+                { label: 'Meta description', value: metaOk ? data.meta_description : 'Missing', bad: !metaOk },
+                { label: 'Page URL', value: data.final_url || data.url || '—', bad: false },
+              ].map(row => (
+                <div key={row.label} className="info-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,130px) minmax(0,1fr)', gap: '12px', alignItems: 'flex-start' }}>
+                  <dt style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, paddingTop: '1px' }}>{row.label}</dt>
+                  <dd style={{ margin: 0, fontSize: '13px', color: row.bad ? '#ff6b75' : '#d0d0d0', wordBreak: 'break-word', lineHeight: 1.5 }}>{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {[
+                { label: 'Words', val: Number(data.word_count ?? 0).toLocaleString() },
+                { label: 'Language', val: tech.lang_attribute || '—' },
+                { label: 'H1 tags', val: tech.h1_count ?? '—' },
+                { label: 'HTTP status', val: data.http_status ?? '—' },
+              ].map(chip => (
+                <div key={chip.label} style={{ background: '#161616', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center', minWidth: '64px' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.06em', marginBottom: '3px', fontWeight: 600 }}>{chip.label}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#d0d0d0' }}>{String(chip.val)}</div>
+                </div>
+              ))}
+            </div>
           </div>
-        )}
-      </div>
+          {groups.map(g => <CheckGroup key={g.title} group={g} />)}
+        </div>
+      </details>
 
-      {/* ── Section 4: Detailed Checks ── */}
-      <div style={{ marginTop: '8px' }}>
-        <div style={{ fontSize: '11px', color: '#555', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '16px' }}>DETAILED CHECKS</div>
+      {/* ── Tools ── */}
+      <section aria-labelledby="tools-h" className="no-print">
+        <h2 id="tools-h" style={sectionH2}>Fix-it tools</h2>
+        <div className="grid-auto" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+          <MetaSuggestPanel url={data.url} keyword={data.keyword} />
+          <SchemaPanel url={data.url} keyword={data.keyword} />
+        </div>
 
-        <CheckGroup title="Meta Data" score={metaScore} checks={
-          <>
-            <CheckItem label="Page title" value={data.title ? `${data.title_length} chars` : 'Not found'} pass={data.title_length >= 30 && data.title_length <= 60} importance="Very important" />
-            <CheckItem label="Meta description" value={data.meta_description ? `${data.meta_length} chars` : 'Not found'} pass={data.meta_length >= 50 && data.meta_length <= 160} importance="Very important" />
-            <CheckItem label="Keyword in title" value={null} pass={!!data.keyword_in_title} importance="Very important" />
-            <CheckItem label="Keyword in meta description" value={null} pass={!!data.keyword_in_meta} importance="Important" />
-            <CheckItem label="Canonical URL" value={tech.canonical_url ? 'Set' : 'Not set'} pass={!!tech.has_canonical} importance="Important" />
-            <CheckItem label="Robots meta" value={tech.robots_noindex ? 'noindex' : 'Indexable'} pass={!tech.robots_noindex} importance="Very important" />
-            <CheckItem label="Language declaration" value={tech.lang_attribute || null} pass={!!tech.has_lang} importance="Nice to have" />
-          </>
-        } />
+        <div style={{ marginTop: '12px' }}>
+          {!localData && (
+            <button
+              type="button"
+              onClick={handleCheckLocalSeo}
+              disabled={localLoading}
+              style={{
+                width: '100%', padding: '12px 20px',
+                background: localLoading ? '#1a1a1a' : '#161616',
+                border: '1px solid #2a2a2a', borderRadius: '10px',
+                color: localLoading ? 'var(--text-muted)' : 'var(--text-body)',
+                fontSize: '13px', fontWeight: 600,
+                cursor: localLoading ? 'default' : 'pointer', letterSpacing: '0.02em',
+                transition: 'background 0.15s, color 0.15s',
+              }}
+            >
+              {localLoading ? 'Checking local SEO signals…' : '📍 Check Local SEO'}
+            </button>
+          )}
+          {localError && (
+            <div role="alert" style={{ fontSize: '12px', color: '#ff6b75', marginTop: '8px', textAlign: 'center' }}>{localError}</div>
+          )}
+          {localData && <LocalSeoPanel data={localData} />}
+          {localData && localData.local_score >= 80 && !localData.local_checks?.some(c => !c.pass) && (
+            <div style={{ background: '#111', border: '1px solid #222', borderRadius: '10px', padding: '14px 20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <span style={{ color: '#22c55e', fontSize: '16px' }}>✓</span>
+              <span style={{ fontSize: '13px', color: '#22c55e', fontWeight: 600 }}>Local SEO looks great: score {localData.local_score}/100, all checks passing.</span>
+            </div>
+          )}
+        </div>
+      </section>
 
-        <CheckGroup title="Page Quality" score={pageScore} checks={
-          <>
-            <CheckItem label="Word count" value={`${data.word_count ?? 0} words`} pass={data.word_count >= 300} importance="Important" />
-            <CheckItem label="Images — ALT attributes" value={data.missing_alt === 0 ? 'All present' : `${data.missing_alt} missing`} pass={data.missing_alt === 0} importance="Important" />
-            <CheckItem label="Keyword in H1" value={null} pass={!!data.keyword_in_h1} importance="Very important" />
-            <CheckItem label="Structured data / Schema" value={tech.has_schema ? 'Detected' : 'Not found'} pass={!!tech.has_schema} importance="Nice to have" />
-            <CheckItem label="Mobile viewport" value={tech.viewport_content || (tech.mobile_viewport ? 'Set' : 'Missing')} pass={!!tech.mobile_viewport} importance="Very important" />
-            <CheckItem label="H1 headings" value={`${tech.h1_count ?? 0} found`} pass={tech.h1_count === 1} importance="Very important" />
-            <CheckItem label="Keyword density" value={data.keyword_density != null ? `${data.keyword_density}%` : '—'} pass={data.keyword_density > 0 && data.keyword_density < 5} warn={data.keyword_density >= 5} importance="Important" />
-          </>
-        } />
+      {/* ── Text in images, GEO, then deep crawl ── */}
+      {data.image_text && <ImageTextPanel data={data.image_text} />}
+      {data.geo_score && <GeoScorePanel geo={data.geo_score} />}
+      {data.deep_crawl && <DeepCrawlPanel data={data.deep_crawl} />}
 
-        <CheckGroup title="Link Structure" score={linkScore} checks={
-          <>
-            <CheckItem label="Internal links" value={`${data.internal_links ?? 0} found`} pass={data.internal_links >= 2} importance="Important" />
-            <CheckItem label="External links" value={`${data.external_links ?? 0} found`} pass={data.external_links >= 1} importance="Nice to have" />
-            <CheckItem label="H2 headings" value={`${tech.h2_count ?? 0} found`} pass={tech.h2_count > 0} importance="Important" />
-            <CheckItem label="H3 headings" value={`${tech.h3_count ?? 0} found`} pass={null} importance="Nice to have" />
-          </>
-        } />
-
-        <CheckGroup title="Social & Technical" score={socialScore} checks={
-          <>
-            <CheckItem label="HTTPS / SSL" value={tech.https_enabled ? 'Secure' : 'Not secure'} pass={!!tech.https_enabled} importance="Very important" />
-            <CheckItem label="Open Graph title" value={tech.has_og_title ? 'Present' : 'Missing'} pass={!!tech.has_og_title} importance="Nice to have" />
-            <CheckItem label="Open Graph description" value={tech.has_og_description ? 'Present' : 'Missing'} pass={!!tech.has_og_description} importance="Nice to have" />
-            <CheckItem label="Open Graph image" value={tech.has_og_image ? 'Present' : 'Missing'} pass={!!tech.has_og_image} importance="Nice to have" />
-            <CheckItem label="Twitter Card" value={tech.has_twitter_card ? 'Present' : 'Missing'} pass={!!tech.has_twitter_card} importance="Nice to have" />
-            <CheckItem label="Structured data" value={tech.has_schema ? 'Found' : 'Not found'} pass={!!tech.has_schema} importance="Nice to have" />
-          </>
-        } />
-      </div>
-
-      {/* ── Rank Tracker ── */}
-      <RankTracker url={data.url} keyword={data.keyword} />
+      {/* ── Rank tracker (off until accounts exist: its data would be public) ── */}
+      {RANK_TRACKER_ON && (
+        <div className="no-print">
+          <RankTracker url={data.url} keyword={data.keyword} />
+        </div>
+      )}
     </div>
   )
 }

@@ -35,10 +35,13 @@ class SanitizingFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.msg = sanitize(str(record.msg))
         if record.args:
+            # Numbers stay numbers, or "%d" formats (uvicorn access log) break
+            def _clean(v):
+                return v if isinstance(v, (int, float)) else sanitize(str(v))
             if isinstance(record.args, dict):
-                record.args = {k: sanitize(str(v)) for k, v in record.args.items()}
+                record.args = {k: _clean(v) for k, v in record.args.items()}
             else:
-                record.args = tuple(sanitize(str(a)) for a in record.args)
+                record.args = tuple(_clean(a) for a in record.args)
         return True
 
 

@@ -2,16 +2,10 @@ import requests as _req
 import re as _re_prompt
 
 
-def _sanitize_for_prompt(text: str, max_len: int = 300) -> str:
-    """Remove prompt injection patterns from scraped content before sending to LLM."""
-    if not text:
-        return ""
-    text = _re_prompt.sub(r'(?i)ignore\s+(all\s+)?(previous|prior|above)\s+instructions?', '[removed]', text)
-    text = _re_prompt.sub(r'(?i)system\s*prompt', '[removed]', text)
-    text = _re_prompt.sub(r'(?i)(return|output|reveal|print)\s+(your\s+)?(api\s*key|secret|token|password)', '[removed]', text)
-    text = _re_prompt.sub(r'(?i)you\s+are\s+now', '[removed]', text)
-    text = _re_prompt.sub(r'(?i)act\s+as\s+(a\s+)?(different|new|another)', '[removed]', text)
-    return text[:max_len]
+def _sanitize_for_prompt(text, max_len: int = 200) -> str:
+    """Scraped/user text → prompt-safe (see ai.gemini.sanitize_for_prompt)."""
+    from ai.gemini import sanitize_for_prompt
+    return sanitize_for_prompt(text, max_len)
 
 
 def get_executive_summary(score, keyword_count, missing_alt_count, word_count):
@@ -63,7 +57,7 @@ def generate_ai_executive_summary(
     benchmark_rows=None,
 ):
     if not gemini_api_key:
-        return "No Gemini API key provided."
+        return None
 
     strategic_insights = strategic_insights or []
     recommended_fixes = recommended_fixes or []
@@ -94,12 +88,20 @@ def generate_ai_executive_summary(
         f"Images Missing ALT: {primary_data.get('Images Missing ALT', 0)}"
     )
 
+    if isinstance(primary_rank, int):
+        rank_text = f"#{primary_rank} in Google's organic results (measured)"
+    elif primary_rank is None:
+        rank_text = "not in Google's top 30 organic results (measured)"
+    else:
+        rank_text = "unknown (not measured)"
+
     insights_text = "\n".join([f"  - {_sanitize_for_prompt(i)}" for i in strategic_insights[:8]]) or "  None provided."
 
-    prompt = f"""You are a senior SEO strategist writing a detailed analysis report for a business owner.
-
-PRIMARY SITE: {_sanitize_for_prompt(primary_name)}
-TARGET KEYWORD: "{_sanitize_for_prompt(keyword)}"
+    from ai.gemini import untrusted_block
+    safe_kw = _sanitize_for_prompt(keyword)
+    data = f"""PRIMARY SITE: {_sanitize_for_prompt(primary_name)}
+TARGET KEYWORD: "{safe_kw}"
+GOOGLE POSITION FOR THIS KEYWORD: {rank_text}
 PRIMARY SEO DATA: {primary_detail}
 BEST COMPETITOR: {_sanitize_for_prompt(top_competitor)}
 
@@ -107,7 +109,13 @@ COMPETITOR DATA:
 {comp_text}
 
 STRATEGIC INSIGHTS:
-{insights_text}
+{insights_text}"""
+
+    prompt = f"""You are a senior SEO strategist writing a detailed analysis report for a business owner.
+
+{untrusted_block(data)}
+
+RULE: Only state a Google ranking for the primary site if GOOGLE POSITION above gives one. Never claim a position that is not listed there, and never claim a competitor's ranking.
 
 Write a COMPREHENSIVE SEO analysis report with these exact sections:
 
@@ -121,7 +129,7 @@ Write a COMPREHENSIVE SEO analysis report with these exact sections:
 3-5 bullet points on specific areas where the primary site is underperforming vs competitors.
 
 ## Keyword & Content Analysis
-Specific analysis of keyword usage, content depth, and how to improve for "{keyword}".
+Specific analysis of keyword usage, content depth, and how to improve for the target keyword.
 
 ## Technical SEO Issues
 Specific technical problems found (HTTPS, schema, alt text, internal links) with impact explanation.
@@ -135,48 +143,14 @@ Specific technical problems found (HTTPS, schema, alt text, internal links) with
 ## Conclusion
 1-2 sentences on expected outcome if recommendations are followed.
 
-Be specific, use the actual data provided, and write for a non-technical business owner."""
+Be specific, use the actual data provided, and write for a non-technical business owner. Keep the whole report under 3,500 characters."""
 
+    from ai.gemini import generate_text, GeminiError
     try:
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 8192}
-        }
-
-        _gemini_headers = {
-            "x-goog-api-key": gemini_api_key,
-            "Content-Type": "application/json",
-        }
-        models_to_try = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash",
-                         "gemini-1.5-flash-8b", "gemini-1.5-pro", "gemini-1.0-pro"]
-        for api_ver in ["v1beta", "v1"]:
-            try:
-                r = _req.get(
-                    f"https://generativelanguage.googleapis.com/{api_ver}/models",
-                    headers=_gemini_headers,
-                    timeout=10
-                )
-                if r.status_code == 200:
-                    discovered = [
-                        m["name"].replace("models/", "")
-                        for m in r.json().get("models", [])
-                        if "generateContent" in m.get("supportedGenerationMethods", [])
-                        and "gemini" in m.get("name", "").lower()
-                    ]
-                    if discovered:
-                        models_to_try = sorted(discovered, key=lambda x: (0 if "flash" in x else 1))
-                        break
-            except Exception:
-                pass
-
-        for model in models_to_try[:4]:
-            for api_ver in ["v1beta", "v1"]:
-                ep = (f"https://generativelanguage.googleapis.com/{api_ver}"
-                      f"/models/{model}:generateContent")
-                resp = _req.post(ep, headers=_gemini_headers, json=payload, timeout=60)
-                if resp.status_code == 200:
-                    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-
-        return "AI summary unavailable — no working Gemini model found for this API key."
-    except Exception as e:
-        return f"AI summary error: {e}"
+        return generate_text(gemini_api_key, prompt, temperature=0.4,
+                             max_output_tokens=8192, timeout=60)
+    except GeminiError as e:
+        # The caller shows product copy; the reason is only logged.
+        import logging
+        logging.getLogger(__name__).warning(f"AI summary failed: {e.kind}")
+        return None

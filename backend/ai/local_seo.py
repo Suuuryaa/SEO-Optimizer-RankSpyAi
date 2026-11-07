@@ -26,6 +26,33 @@ _LOCAL_BUSINESS_TYPES = {
 }
 
 
+_DATE_RE = re.compile(r"\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b|\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b")
+# A number written the way businesses show phones: optional +country code, then
+# groups of digits split by spaces, dashes, dots or brackets — 8 to 15 digits in all.
+_PHONE_RE = re.compile(r"(?<!\w)(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{1,5}\)?[\s.-]?){2,5}\d{2,5}(?!\w)")
+
+
+def _has_phone(soup, page_text: str) -> bool:
+    """Tap-to-call links, or a phone-shaped number in the text (any country format:
+    NZ "07 834 9293", AU "(02) 9876 5432", US "555-123-4567", "+44 20 7946 0958")."""
+    try:
+        if soup is not None and soup.select_one('a[href^="tel:"]'):
+            return True
+    except Exception:
+        pass
+    text = _DATE_RE.sub(" ", page_text or "")
+    for m in _PHONE_RE.finditer(text):
+        digits = re.sub(r"\D", "", m.group(0))
+        raw = m.group(0).strip()
+        if not (8 <= len(digits) <= 15 and re.search(r"[\s.()-]", raw)):
+            continue
+        # Local/international formats start with 0, + or a bracketed area code;
+        # US numbers have the 3-3-4 shape. Years and prices ("2022 2023 2024") don't.
+        if raw[0] in "0+(" or re.fullmatch(r"\d{3}[\s.-]\d{3}[\s.-]\d{4}", raw):
+            return True
+    return False
+
+
 def analyze_local_seo(url: str, soup, page_text: str) -> dict:
     """
     Returns:
@@ -42,11 +69,7 @@ def analyze_local_seo(url: str, soup, page_text: str) -> dict:
     text_lower = page_text.lower()
 
     # ── NAP Detection ─────────────────────────────────────────────────────────
-    phone_patterns = [
-        r'\(?\d{3}\)?[\s\-]\d{3}[\s\-]\d{4}',
-        r'\+\d{1,3}[\s\-]\d',
-    ]
-    phone_found = any(re.search(p, page_text) for p in phone_patterns)
+    phone_found = _has_phone(soup, page_text)
 
     address_pattern = r'\d+\s+\w+\s+(Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Blvd|Boulevard|Way|Court|Ct)\b'
     address_found = bool(re.search(address_pattern, page_text, re.IGNORECASE))

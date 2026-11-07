@@ -23,7 +23,7 @@ UPSTASH_REDIS_REST_URL   = os.getenv("UPSTASH_REDIS_REST_URL", "")
 UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
 
 # ── Rate limit ────────────────────────────────────────────────────────────────
-GLOBAL_LIMIT = int(os.getenv("GLOBAL_LIMIT", "30"))
+GLOBAL_LIMIT = int(os.getenv("GLOBAL_LIMIT", "20"))
 
 
 def active_keys(user_api_keys: dict | None = None) -> dict:

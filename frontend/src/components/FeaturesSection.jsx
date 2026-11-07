@@ -1,8 +1,4 @@
-import { useEffect, useRef } from 'react'
-import { gsap } from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
-
-gsap.registerPlugin(ScrollTrigger)
+import { useReveal } from '../lib/useReveal'
 
 const FEATURES = [
   {
@@ -21,7 +17,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Content Quality',
-    desc: 'Evaluates word count, keyword density, duplicate content, heading structure, and readability scores.',
+    desc: 'Evaluates word count, keyword use and density, heading structure, and readability.',
   },
   {
     icon: (
@@ -30,7 +26,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Link Structure',
-    desc: 'Maps internal and external links, anchor text quality, broken links, and crawl depth.',
+    desc: 'Counts internal and external links and checks your heading structure.',
   },
   {
     icon: (
@@ -38,8 +34,8 @@ const FEATURES = [
         <polygon points="13,2 3,14 12,14 11,22 21,10 12,10 13,2"/>
       </svg>
     ),
-    title: 'Page Speed',
-    desc: 'Google PageSpeed scores, Core Web Vitals, render-blocking resources, and load time breakdown.',
+    title: 'Competitor Comparison',
+    desc: 'Finds up to 8 competitors for your keyword, scores their pages and looks up real Google positions.',
   },
   {
     icon: (
@@ -62,50 +58,12 @@ const FEATURES = [
 ]
 
 export default function FeaturesSection() {
-  const sectionRef = useRef(null)
-  const headingRef = useRef(null)
-  const cardsRef = useRef([])
-
-  useEffect(() => {
-    const heading = headingRef.current
-    const cards = cardsRef.current.filter(Boolean)
-
-    gsap.set(heading, { opacity: 0, y: 40 })
-    cards.forEach((card) => gsap.set(card, { opacity: 0, y: 50 }))
-
-    ScrollTrigger.create({
-      trigger: heading,
-      start: 'top 85%',
-      onEnter: () => gsap.to(heading, { opacity: 1, y: 0, duration: 0.8, ease: 'power3.out' }),
-    })
-
-    cards.forEach((card, i) => {
-      ScrollTrigger.create({
-        trigger: card,
-        start: 'top 90%',
-        onEnter: () =>
-          gsap.to(card, {
-            opacity: 1,
-            y: 0,
-            duration: 0.65,
-            ease: 'power3.out',
-            delay: (i % 3) * 0.1,
-          }),
-      })
-    })
-
-    // Refresh after fonts/images settle
-    const t = setTimeout(() => ScrollTrigger.refresh(), 300)
-    return () => {
-      clearTimeout(t)
-      ScrollTrigger.getAll().forEach((st) => st.kill())
-    }
-  }, [])
+  const sectionRef = useReveal()
 
   return (
-    <div ref={sectionRef} style={{ padding: '100px 24px' }}>
-      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-        <div ref={headingRef} style={{ textAlign: 'center', marginBottom: '64px' }}>
+    <div ref={sectionRef} style={{ padding: '56px 0' }}>
+      <div style={{ maxWidth: '1088px', margin: '0 auto' }}>
+        <div className="reveal" style={{ textAlign: 'center', marginBottom: '48px' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, color: '#e63946', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '16px' }}>
             What we analyze
           </div>
@@ -121,15 +79,15 @@ export default function FeaturesSection() {
           >
             Everything Your Site
             <br />
-            <span style={{ color: '#444' }}>Needs to Rank</span>
+            <span style={{ color: '#8a8a8a' }}>Needs to Rank</span>
           </h2>
-          <p style={{ fontSize: '15px', color: '#505050' }}>200+ SEO factors analyzed in seconds.</p>
+          <p style={{ fontSize: '15px', color: '#a0a0a0' }}>30+ on-page checks in a typical one-minute scan.</p>
         </div>
 
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
             gap: '1px',
             background: '#1a1a1a',
             borderRadius: '16px',
@@ -139,8 +97,8 @@ export default function FeaturesSection() {
           {FEATURES.map((f, i) => (
             <div
               key={f.title}
-              ref={(el) => (cardsRef.current[i] = el)}
-              style={{ background: '#0d0d0d', padding: '32px 28px', display: 'flex', flexDirection: 'column', gap: '14px', cursor: 'default', transition: 'background 0.25s' }}
+              className="reveal"
+              style={{ background: '#0d0d0d', padding: '28px 24px', display: 'flex', flexDirection: 'column', gap: '14px', cursor: 'default', transitionDelay: `${(i % 3) * 0.1}s` }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = '#131313'
                 const icon = e.currentTarget.querySelector('.feat-icon')
@@ -169,8 +127,8 @@ export default function FeaturesSection() {
               >
                 {f.icon}
               </div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#e0e0e0', letterSpacing: '-0.3px' }}>{f.title}</div>
-              <div style={{ fontSize: '13px', color: '#505050', lineHeight: '1.65' }}>{f.desc}</div>
+              <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#e0e0e0', letterSpacing: '-0.3px', margin: 0 }}>{f.title}</h3>
+              <div style={{ fontSize: '13px', color: '#a0a0a0', lineHeight: '1.65' }}>{f.desc}</div>
             </div>
           ))}
         </div>

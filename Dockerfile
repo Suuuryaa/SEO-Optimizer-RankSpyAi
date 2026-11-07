@@ -18,6 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt -r backend-requirements.txt
 
 # Install Playwright Chromium browser
 RUN playwright install chromium
+# Browser for Scrapling's StealthyFetcher (patchright); optional, never fail the build
+RUN patchright install chromium || true
 
 COPY . .
 

@@ -1,4 +1,4 @@
-name: Keep Streamlit Awake
+name: Keep Live Site Warm
 
 on:
   schedule:
@@ -10,4 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping app
-        run: curl -s -o /dev/null -w "%{http_code}" https://suryaseodashboard.streamlit.app/
+        run: |
+          curl -s -o /dev/null -w "frontend %{http_code}\n" https://rankspyseo.xyz/
+          curl -s -o /dev/null -w "backend %{http_code}\n" https://affectionate-recreation-production-e508.up.railway.app/health

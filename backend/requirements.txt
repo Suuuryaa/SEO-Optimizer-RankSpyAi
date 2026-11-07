@@ -10,7 +10,8 @@ beautifulsoup4>=4.12.0
 lxml>=6.1.0
 tenacity>=8.2.3
 textstat>=0.7.3
-scrapling>=0.4.8
+# [fetchers] pulls in patchright — without it every Scrapling fetcher fails to import
+scrapling[fetchers]>=0.5.1
 curl-cffi>=0.15.0
 browserforge>=1.2.4
 apify-fingerprint-datapoints>=0.13.0
@@ -22,3 +23,5 @@ playwright>=1.40.0
 # AI intelligence layer — HuggingFace calls use requests (already installed)
 # force rebuild Sun Sep 27 00:00:00 IST 2026
 # HF_TOKEN set Sat Sep 26 01:44:13 IST 2026
+# Text in images (paid feature, off unless IMAGE_TEXT_ENABLED=on). When turning it on,
+# also install: rapidocr>=3.10.0 onnxruntime>=1.31.0  (~110 MB, ~200 MB RAM)

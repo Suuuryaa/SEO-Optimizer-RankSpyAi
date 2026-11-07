@@ -1,0 +1,12 @@
+# RankSpy AI
+
+> Free AI-powered SEO audit tool. Paste a URL and a target keyword to get an on-page SEO score, an AI-visibility (GEO) score and a comparison against competitors.
+
+## What it checks
+- On-page SEO: title, meta description, headings, keyword placement and density, images missing alt text, internal and external links, canonical, robots meta, language, Open Graph, structured data, HTTPS and mobile viewport
+- AI visibility (GEO): AI crawler access in robots.txt, llms.txt, E-E-A-T signals and how quotable the content is
+- Competitors: finds sites ranking for the keyword and compares their scores and content depth
+- Extras: meta tag suggestions, JSON-LD schema generator, local SEO checks, keyword rank tracking
+
+## Use
+- [RankSpy AI](https://rankspyseo.xyz/): free, no sign-up; a shared daily pool of checks, or bring your own API keys

@@ -10,6 +10,7 @@ export default defineConfig({
     proxy: {
       '/analyze': 'http://localhost:8000',
       '/competitors': 'http://localhost:8000',
+      '/jobs': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
     },
   },
