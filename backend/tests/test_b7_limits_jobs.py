@@ -168,8 +168,15 @@ def test_ip_quota_redis_failure_enforced_in_process(monkeypatch):
     assert results == [True, True, True, False, False]
 
 
-def test_rankings_gated(client, monkeypatch):
+def test_rankings_off_by_default(client, public_dns):
+    # No accounts yet: /rankings would show anyone's tracked keywords, so it's off
+    assert client.get("/rankings", params={"url": "https://example.com/"}).status_code == 404
+    assert client.post("/track", json={"url": "https://example.com/", "keyword": "x"}).status_code == 404
+
+
+def test_rankings_gated_when_enabled(client, monkeypatch):
     import main
+    monkeypatch.setattr(main, "RANK_TRACKER_ENABLED", True)
     monkeypatch.setattr(main, "check_ip_quota", lambda ip, bucket, limit: bucket != "rankings")
     r = client.get("/rankings", params={"url": "https://example.com/"})
     assert r.status_code == 429

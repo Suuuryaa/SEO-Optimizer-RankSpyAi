@@ -42,6 +42,7 @@ def get_serp_results(keyword, api_key, location_params=None, max_retries=3):
     for attempt in range(max_retries):
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=30)
+            import spend; spend.serper_call(api_key)
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             last_error = e
             if attempt < max_retries - 1:

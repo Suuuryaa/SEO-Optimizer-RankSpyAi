@@ -168,6 +168,7 @@ def serp_organic_results(keyword: str, serper_key: str, pages: int = SERP_DEPTH_
             headers={"X-API-KEY": serper_key, "Content-Type": "application/json"},
             timeout=15,
         )
+        import spend; spend.serper_call(serper_key)
         resp.raise_for_status()
         organic = resp.json().get("organic", [])
         if not organic:

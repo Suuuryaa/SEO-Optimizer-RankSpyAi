@@ -164,6 +164,7 @@ class AnalyzeRequest(BaseModel):
     strategy:      str  = "mobile"   # pagespeed strategy: mobile | desktop
     crawl_mode:    str  = "standard" # standard | javascript
     fresh:         bool = False      # True bypasses the result cache (and is charged)
+    image_text:    bool = False      # read words inside images (paid feature; server flag IMAGE_TEXT_ENABLED)
     user_api_keys: Optional[UserApiKeys] = None
 
     @field_validator("url")

@@ -58,6 +58,9 @@ def _quota_gate(request: Request, bucket: str, limit: int) -> None:
     if not check_ip_quota(_client_ip(request), bucket, limit):
         raise HTTPException(status_code=429, detail="Daily limit reached for this feature. Try again tomorrow.")
 from rate_limiter import check_and_consume, get_global_uses, get_remaining, refund
+import free_limits
+import spend
+from net_safety import visitor_bucket
 from models import (
     AnalyzeRequest, AnalyzeResponse,
     CompetitorsRequest, CompetitorsResponse,
@@ -97,6 +100,7 @@ from ai.content_brief import generate_content_brief
 from ai.local_seo import analyze_local_seo
 from ai.keyphrase import extract_keyphrases
 from deep_crawl import deep_crawl
+from image_text import analyze_image_text, warm_up as _warm_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +114,8 @@ app = FastAPI(
     redoc_url=None if _is_prod else "/redoc",
     openapi_url=None if _is_prod else "/openapi.json",
 )
+if os.getenv("IMAGE_TEXT_ENABLED", "").lower() in ("1", "true", "on"):
+    _warm_ocr()   # load RapidOCR in the background so the first scan isn't slow
 
 # ── Security headers middleware ───────────────────────────────────────────────
 class SecurityHeadersMiddleware:
@@ -296,22 +302,75 @@ def _has_own_keys(user_api_keys) -> bool:
 # Own-key users still use the server's scraping proxies, so they get a daily cap too.
 OWN_KEY_DAILY_LIMIT = int(os.getenv("OWN_KEY_DAILY_LIMIT", "100"))
 
+# Paid-only / unfinished features stay off until accounts exist.
+IMAGE_TEXT_ENABLED = os.getenv("IMAGE_TEXT_ENABLED", "").lower() in ("1", "true", "on")
+# The rank tracker has no accounts yet, so /rankings would show anyone's tracked keywords.
+RANK_TRACKER_ENABLED = os.getenv("RANK_TRACKER_ENABLED", "").lower() in ("1", "true", "on")
 
-def _gate(user_api_keys, request: Request) -> dict:
+
+def _require_rank_tracker() -> None:
+    if not RANK_TRACKER_ENABLED:
+        raise HTTPException(status_code=404, detail="Rank tracking is coming soon.")
+
+
+class _LimitError(HTTPException):
+    """429 with a machine-readable error_kind the frontend can explain."""
+    def __init__(self, status_code: int, detail: str, error_kind: str):
+        super().__init__(status_code=status_code, detail=detail)
+        self.error_kind = error_kind
+
+
+def _gate(user_api_keys, request: Request, kind: str = "scan",
+          url: str | None = None, keyword: str = "", fresh: bool = False) -> dict:
+    """Charge one free scan (or comparison) to this visitor, or refuse.
+
+    Order: own keys (separate daily cap) → site-wide spend cap → free rescan of a
+    page this visitor already scanned → today's per-visitor allowance → global pool.
+    """
     own = _has_own_keys(user_api_keys)
-    if own and not check_ip_quota(_client_ip(request), "ownkeys", OWN_KEY_DAILY_LIMIT):
-        raise HTTPException(status_code=429, detail="Daily limit reached for scans with your own keys. Try again tomorrow.")
+    bucket = visitor_bucket(_client_ip(request))
+    if own and not check_ip_quota(bucket, "ownkeys", OWN_KEY_DAILY_LIMIT):
+        raise _LimitError(429, "Daily limit reached for scans with your own keys. Try again tomorrow.", "rate_limited")
+
+    personal = None          # which free counter was charged (to give back on failure)
+    if not own:
+        if spend.over_cap():
+            raise _LimitError(503, "Free scans are paused for the rest of today because of very high demand. "
+                                   "Please try again tomorrow.", "busy")
+        if kind == "scan" and fresh and url and free_limits.take_free_rescan(bucket, url, keyword):
+            personal = "rescan"
+        elif free_limits.consume(bucket, kind):
+            personal = kind
+        else:
+            limit = free_limits.FREE_COMPARISONS_PER_DAY if kind == "compare" else free_limits.FREE_SCANS_PER_DAY
+            what = "competitor comparison" if kind == "compare" else "free scans"
+            noun = what if kind != "compare" or limit != 1 else "free competitor comparison"
+            raise _LimitError(429, f"You've used today's {limit} {noun}.",
+                              "compare_limit" if kind == "compare" else "daily_limit")
+
     result = check_and_consume(user_has_own_keys=own)
     if not result["allowed"]:
-        raise HTTPException(status_code=429, detail=result["message"])
-    result["pooled"] = not own
+        _give_back_personal(bucket, personal, url, keyword)
+        raise _LimitError(429, "Today's free scans for the whole site are used up. Please try again tomorrow.", "busy")
+    result.update(pooled=not own, bucket=bucket, personal=personal, url=url, keyword=keyword)
     return result
 
 
-def _refund(gate: dict) -> None:
-    """Give a pool credit back when the scanned page itself couldn't be read."""
-    if gate and gate.get("pooled"):
+def _give_back_personal(bucket, personal, url, keyword) -> None:
+    if personal == "rescan":
+        free_limits.give_back_rescan(bucket, url, keyword)
+    elif personal:
+        free_limits.give_back(bucket, personal)
+
+
+def _refund(gate: dict, exc: Exception | None = None) -> None:
+    """Give credits back when the scanned page itself couldn't be read — unless a
+    paid proxy was used for it (that cost us money, so it isn't free to retry)."""
+    if not gate or getattr(exc, "used_proxy", False):
+        return
+    if gate.get("pooled"):
         refund()
+    _give_back_personal(gate.get("bucket"), gate.get("personal"), gate.get("url"), gate.get("keyword"))
 
 
 def _google_positions(keyword: str, urls: list[str], serper_key: str, gl: str = "us", hl: str | None = None,
@@ -572,17 +631,7 @@ async def _run_job(job: dict, make_coro) -> None:
             job["finished"] = _time.time()
 
 
-def _job_ip_bucket(ip: str) -> str:
-    """One visitor = one IPv4 address or one IPv6 /64 (a single host usually owns a whole /64)."""
-    try:
-        addr = _ipaddr.ip_address(ip)
-    except ValueError:
-        return ip
-    if addr.version == 6:
-        if addr.ipv4_mapped is not None:
-            return str(addr.ipv4_mapped)
-        return str(_ipaddr.ip_network(f"{addr}/64", strict=False))
-    return str(addr)
+_job_ip_bucket = visitor_bucket     # one visitor = one IPv4 address or one IPv6 /64
 
 
 def _start_job(kind: str, make_coro, ip: str = "unknown") -> dict:
@@ -639,13 +688,14 @@ def admin_reset_pool(x_admin_key: Optional[str] = Header(None)):
 
 @app.get("/rate-status")
 def rate_status(request: Request):
-    """Return global pool usage — never resets until manually cleared."""
-    used = get_global_uses()
-    remaining = max(0, GLOBAL_LIMIT - used)
+    """This visitor's free allowance for today (plus legacy keys for older frontends)."""
+    st = free_limits.status(visitor_bucket(_client_ip(request)))
     return {
-        "ip_used":      used,
-        "ip_remaining": remaining,
-        "daily_limit":  GLOBAL_LIMIT,
+        **st,
+        "paused": spend.over_cap(),
+        "ip_used":      st["scans_used"],
+        "ip_remaining": st["scans_remaining"],
+        "daily_limit":  st["scans_limit"],
     }
 
 
@@ -654,18 +704,22 @@ async def analyze(req: AnalyzeRequest, request: Request):
 
     # ── Result cache first: a hit costs no pool credit ───────────────────────
     # fresh=true skips the cache (and is charged); GEO/PageSpeed/JS scans are never cached.
-    cacheable = not (req.fresh or req.geo or req.pagespeed or js_mode)
+    # Text in images is a paid feature: off unless the server turns it on,
+    # whatever the request says (and never served from the shared cache).
+    image_text_on = req.image_text and IMAGE_TEXT_ENABLED
+    cacheable = not (req.fresh or req.geo or req.pagespeed or js_mode or image_text_on)
+    bucket = visitor_bucket(_client_ip(request))
     if cacheable:
         cached = await _run(get_cached, req.url, req.keyword)
         if cached:
             logger.info(f"/analyze cache HIT: {req.url}")
-            uses = await _run(get_global_uses)
-            cached["cached"]         = True
-            cached["pool_uses"]      = uses
-            cached["pool_remaining"] = max(0, GLOBAL_LIMIT - uses)
+            cached.pop("image_text", None)
+            await _run(free_limits.mark_seen, bucket, req.url, req.keyword)
+            cached["cached"] = True
+            cached.update(await _run(_allowance_fields, bucket, req.url, req.keyword))
             return cached
 
-    gate = await _run(_gate, req.user_api_keys, request)
+    gate = await _run(_gate, req.user_api_keys, request, "scan", req.url, req.keyword, req.fresh)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     # ── Run analysis pipeline ─────────────────────────────────────────────────
@@ -675,7 +729,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
     except Exception as exc:
         logger.error(f"/analyze error for {req.url}: {exc}")
         if isinstance(exc, FetchError):
-            await _run(_refund, gate)
+            await _run(_refund, gate, exc)
         raise _analysis_http_error(exc)
 
     # ── Deep Playwright crawl (JS mode) ───────────────────────────────────────
@@ -697,7 +751,19 @@ async def analyze(req: AnalyzeRequest, request: Request):
             result["deep_crawl"] = {"error": "Deep crawl failed"}
 
     soup = result.pop("_soup")
-    result.pop("_text")
+    page_text = result.pop("_text")
+
+    # ── Text in images (RapidOCR + Gemini) — adds fixes, never changes the score ──
+    if image_text_on:
+        _step("Reading text inside images")
+        try:
+            img = await _run(analyze_image_text, soup, result.get("final_url") or req.url,
+                             req.keyword, page_text, keys["gemini"] or "")
+            result["image_text"] = img
+            result["recommendations"] = list(result.get("recommendations") or []) + img.get("recommendations", [])
+        except Exception as exc:
+            logger.warning(f"/analyze image-text error: {exc}")
+            result["image_text"] = {"error": "Couldn't read the images on this page"}
 
     # ── GEO analysis ──────────────────────────────────────────────────────────
     if req.geo:
@@ -740,16 +806,29 @@ async def analyze(req: AnalyzeRequest, request: Request):
                 logger.warning(f"/analyze PageSpeed error: {exc}")
                 result["pagespeed"] = {"error": "PageSpeed analysis failed"}
 
-    result["pool_uses"]      = gate["uses"]
-    result["pool_remaining"] = gate["remaining"]
     result["cached"]         = False
     result["cached_at"]      = None
+    result["free_rescan"]    = gate.get("personal") == "rescan"
 
     # Cache plain scans only (fresh scans refresh the cached copy)
-    if not req.geo and not req.pagespeed and not js_mode:
+    if not req.geo and not req.pagespeed and not js_mode and not image_text_on:
         await _run(set_cached, req.url, req.keyword, result)
 
+    await _run(free_limits.mark_seen, bucket, req.url, req.keyword)
+    result.update(await _run(_allowance_fields, bucket, req.url, req.keyword))
     return result
+
+
+def _allowance_fields(bucket: str, url: str, keyword: str) -> dict:
+    """What the page shows under a result: scans left today and free rescans of this page."""
+    st = free_limits.status(bucket)
+    uses = get_global_uses()
+    return {
+        "scans_remaining": st["scans_remaining"], "scans_limit": st["scans_limit"],
+        "free_rescans_left": free_limits.rescans_left(bucket, url, keyword),
+        "resets_at": st["resets_at"],
+        "pool_uses": uses, "pool_remaining": max(0, GLOBAL_LIMIT - uses),
+    }
 
 
 def _domain_of(url: str) -> str:
@@ -759,7 +838,7 @@ def _domain_of(url: str) -> str:
 
 
 async def competitors(req: CompetitorsRequest, request: Request):
-    gate = await _run(_gate, req.user_api_keys, request)
+    gate = await _run(_gate, req.user_api_keys, request, "compare")
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     if not keys["serper"]:
@@ -775,7 +854,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
     except Exception as exc:
         logger.error(f"/competitors primary error: {exc}")
         if isinstance(exc, FetchError):
-            await _run(_refund, gate)
+            await _run(_refund, gate, exc)
         raise _analysis_http_error(exc)
 
     primary_raw.pop("_soup", None)
@@ -813,6 +892,7 @@ async def competitors(req: CompetitorsRequest, request: Request):
             )
     except Exception as exc:
         logger.error(f"/competitors discovery error: {exc}")
+        await _run(_refund, gate)
         raise HTTPException(status_code=502, detail="Competitor discovery failed. Please try again.")
 
     # Analyse competitors in parallel
@@ -1116,6 +1196,7 @@ class TrackRequest(_UrlModel):
 @app.post("/track")
 async def track_keyword(req: TrackRequest, request: Request):
     """Save a URL+keyword for rank tracking, then immediately check its SERP position."""
+    _require_rank_tracker()
     await _run(_quota_gate, request, "track", TRACK_DAILY_LIMIT)
     supabase_url = os.environ.get("SUPABASE_URL", "")
     supabase_key = os.environ.get("SUPABASE_KEY", "")
@@ -1149,6 +1230,7 @@ async def track_keyword(req: TrackRequest, request: Request):
 @app.get("/rankings")
 async def get_rankings(url: str, request: Request):
     """Get all tracked keywords + rank history for a URL."""
+    _require_rank_tracker()
     await _run(_quota_gate, request, "rankings", 60)
     supabase_url = os.environ.get("SUPABASE_URL", "")
     supabase_key = os.environ.get("SUPABASE_KEY", "")

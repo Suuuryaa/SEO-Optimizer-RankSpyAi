@@ -23,3 +23,5 @@ playwright>=1.40.0
 # AI intelligence layer — HuggingFace calls use requests (already installed)
 # force rebuild Sun Sep 27 00:00:00 IST 2026
 # HF_TOKEN set Sat Sep 26 01:44:13 IST 2026
+# Text in images (paid feature, off unless IMAGE_TEXT_ENABLED=on). When turning it on,
+# also install: rapidocr>=3.10.0 onnxruntime>=1.31.0  (~110 MB, ~200 MB RAM)

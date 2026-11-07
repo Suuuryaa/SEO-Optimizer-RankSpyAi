@@ -123,3 +123,17 @@ def safe_get(url: str, max_bytes: int = 500_000, max_hops: int = 5, timeout: int
         resp.url = current
         return resp
     return None
+
+
+def visitor_bucket(ip: str) -> str:
+    """One visitor = one IPv4 address or one IPv6 /64 (a single host usually owns a
+    whole /64, so counting full IPv6 addresses would let one machine rotate forever)."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6:
+        if addr.ipv4_mapped is not None:
+            return str(addr.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return str(addr)

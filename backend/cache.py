@@ -206,6 +206,8 @@ def check_ip_quota(ip: str, bucket: str, limit: int) -> bool:
     from the global pool. When Redis is unavailable the limit is enforced
     in-process instead of failing open.
     """
+    from net_safety import visitor_bucket
+    ip = visitor_bucket(ip)          # IPv6: count the /64, not each address
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     key = f"quota:{bucket}:{ip}:{today}"
     try:

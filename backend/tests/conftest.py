@@ -75,6 +75,10 @@ def _clear_caches():
     with seo_utils._PAGE_CACHE_LOCK:
         seo_utils._PAGE_CACHE.clear()
         seo_utils._page_cache_bytes = 0
+    import free_limits, spend
+    free_limits._local.clear()
+    spend._local.clear()
+    spend._alerted.clear()
     yield
 
 

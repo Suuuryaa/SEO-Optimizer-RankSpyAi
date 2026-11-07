@@ -15,6 +15,7 @@ Selection order:
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import re
@@ -29,8 +30,8 @@ _API = "https://generativelanguage.googleapis.com/v1beta"
 
 # Google-maintained aliases that always point at the current model of that tier.
 _FALLBACK_MODELS = [
-    "gemini-flash-latest",
     "gemini-flash-lite-latest",
+    "gemini-flash-latest",
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
 ]
@@ -91,17 +92,24 @@ def _fp(api_key: str) -> str:
     return f"{len(api_key)}:{api_key[-6:]}"
 
 
+# Flash-Lite first by default: several times cheaper per token, and good enough for
+# short structured answers. GEMINI_PREFER=flash puts full Flash first again.
+_PREFER_LITE = os.getenv("GEMINI_PREFER", "lite").lower() != "flash"
+
+
 def _rank(name: str) -> tuple:
-    """Sort key: newest version first, flash before flash-lite before pro."""
+    """Sort key: newest version first; flash-lite before flash (or the reverse with
+    GEMINI_PREFER=flash); pro last."""
+    lite_tier, flash_tier = (0, 1) if _PREFER_LITE else (1, 0)
     m = _STABLE_RE.match(name)
     if m:
         version = float(m.group(1))
-        tier = 0 if (m.group(2) == "flash" and not m.group(3)) else (1 if m.group(3) else 2)
+        tier = lite_tier if m.group(3) else (flash_tier if m.group(2) == "flash" else 2)
         pinned = 1 if m.group(4) else 0          # prefer un-pinned name over -001
         return (0, tier, -version, pinned)
     a = _ALIAS_RE.match(name)
     if a:
-        tier = {"flash": 0, "flash-lite": 1, "pro": 2}[a.group(1)]
+        tier = {"flash": flash_tier, "flash-lite": lite_tier, "pro": 2}[a.group(1)]
         return (1, tier, 0, 0)                   # aliases after explicit versions
     return (9, 9, 0, 0)
 
@@ -158,6 +166,20 @@ def _mark_bad(api_key: str, model: str, ttl: float = _BAD_TTL) -> None:
     _bad.setdefault(_fp(api_key), {})[model] = time.time() + ttl
 
 
+def _fast_thinking(model: str) -> dict:
+    """Least thinking each model family accepts (a wrong field is an HTTP 400,
+    which would wrongly mark a working model as bad for hours)."""
+    m = re.match(r"gemini-(\d+)(?:\.(\d+))?-(flash|pro)", model)
+    if not m:
+        return {}
+    major = int(m.group(1))
+    if major >= 3:
+        return {"thinkingConfig": {"thinkingLevel": "low" if m.group(3) == "pro" else "minimal"}}
+    if major == 2 and m.group(2) == "5" and m.group(3) == "flash":
+        return {"thinkingConfig": {"thinkingBudget": 0}}
+    return {}
+
+
 def _extract_text(data: dict) -> str:
     for cand in data.get("candidates", []):
         parts = cand.get("content", {}).get("parts", [])
@@ -172,19 +194,30 @@ def generate_text(
     prompt: str,
     *,
     temperature: float = 0.4,
-    max_output_tokens: int = 8192,
+    max_output_tokens: int = 4096,
     timeout: int = 60,
+    images: list | None = None,
     json_output: bool = False,
+    max_chars: int = _MAX_OUTPUT_CHARS,
+    fast: bool = True,
 ) -> str:
-    """Return generated text, trying models in order. Raises GeminiError."""
+    """Return generated text, trying models in order. Raises GeminiError.
+
+    images: optional [(mime_type, bytes), ...] sent alongside the prompt
+    (Gemini Flash models read images). json_output asks for a JSON response.
+    fast (the default) keeps model "thinking" to the minimum: cheaper and faster;
+    pass fast=False only where deeper reasoning is worth the cost.
+    """
     if not api_key:
         raise GeminiError("invalid_key", "No Gemini API key provided")
 
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_output_tokens,
-                             **({"responseMimeType": "application/json"} if json_output else {})},
-    }
+    parts = [{"text": prompt}]
+    for mime, data in images or []:
+        parts.append({"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode("ascii")}})
+    config = {"temperature": temperature, "maxOutputTokens": max_output_tokens}
+    if json_output:
+        config["responseMimeType"] = "application/json"
+    payload = {"contents": [{"parts": parts}], "generationConfig": config}
     headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
     errors: list[str] = []
     quota_hits = 0
@@ -192,6 +225,8 @@ def generate_text(
     fp = _fp(api_key)
     for model in _candidates(api_key)[:_MAX_ATTEMPTS]:
         proven = _last_good.get(fp) == model
+        if fast:
+            payload["generationConfig"] = {**config, **_fast_thinking(model)}
         try:
             resp = requests.post(
                 f"{_API}/models/{model}:generateContent",
@@ -204,10 +239,16 @@ def generate_text(
             continue
 
         if resp.status_code == 200:
-            text = _extract_text(resp.json())
+            data = resp.json()
+            try:
+                import spend
+                spend.gemini_call(api_key, data.get("usageMetadata"))
+            except Exception:
+                pass
+            text = _extract_text(data)
             if text:
                 _last_good[_fp(api_key)] = model
-                return text[:_MAX_OUTPUT_CHARS]
+                return text[:max_chars]
             errors.append(f"{model}: empty response")
             continue
         if resp.status_code in (401, 403):

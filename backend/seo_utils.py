@@ -97,6 +97,7 @@ def _assert_public(url: str, redirected: bool = False) -> None:
 
 # Paid proxies: at most ONE paid attempt per scan, within a daily budget each,
 # so blocked sites can't drain the free monthly credits (ScraperAPI 1,000, ZenRows 5,000).
+_PROXY_FALLBACK = _os.environ.get("PROXY_FALLBACK", "").lower() in ("1", "true", "on")
 _PROXY_BUDGETS = {
     "scraperapi": int(_os.environ.get("SCRAPERAPI_DAILY_LIMIT", "30")),
     "zenrows": int(_os.environ.get("ZENROWS_DAILY_LIMIT", "150")),
@@ -330,12 +331,21 @@ def _fetch_page(url):
             logger.info(f"Tier2 Fetcher failed for {url}: {e} — escalating to StealthyFetcher")
 
     # ── Tiers 3–4: ONE paid proxy attempt (first provider with budget left) ─
+    # Off unless PROXY_FALLBACK=on: proxies cost money per page, and routing around a
+    # site's blocks is the riskiest thing for a payment provider's review.
     paid = [("scraperapi", _SCRAPER_API_KEY, _fetch_with_scraperapi),
             ("zenrows", _ZENROWS_API_KEY, _fetch_with_zenrows)]
-    if time.time() - _t0 < 20 and _is_public_url(url):
+    used_proxy = False
+    if _PROXY_FALLBACK and time.time() - _t0 < 20 and _is_public_url(url):
         for name, key, fetch in paid:
             if not key or not _proxy_budget_ok(name):
                 continue
+            used_proxy = True
+            try:
+                import spend
+                spend.proxy_call()
+            except Exception:
+                pass
             try:
                 logger.info(f"Paid tier {name} fetching {url}")
                 return (*fetch(url), other_meta)
@@ -357,7 +367,9 @@ def _fetch_page(url):
         else:
             logger.info(f"Tier5 skipped (browser busy): {url}")
 
-    raise FetchError("blocked", "This site blocked our scanner, so we couldn't read the page.")
+    err = FetchError("blocked", "This site blocked our scanner, so we couldn't read the page.")
+    err.used_proxy = used_proxy      # a paid proxy was spent: the scan isn't refunded
+    raise err
 
 
 # Keep tenacity retry on top for transient network errors
