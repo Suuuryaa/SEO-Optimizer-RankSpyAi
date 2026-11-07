@@ -70,7 +70,6 @@ function TitleCell({ row }) {
     return (
       <span title="From the title Google shows for this page">
         <KwCell v={row.listingKw === 'unknown' ? 'no' : row.listingKw} />
-        <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)' }}>Google listing</span>
       </span>
     )
   }
@@ -90,7 +89,6 @@ function ScoreCell({ row }) {
     return (
       <span title="Google Lighthouse SEO check. A different scale from our on-page score.">
         <span style={{ color: g.color, fontWeight: 800 }}>{row.google.score}</span>
-        <span style={{ display: 'block', fontSize: '10px', color: 'var(--text-muted)' }}>Google check</span>
       </span>
     )
   }
@@ -112,12 +110,6 @@ function SiteCell({ row }) {
           {hostOf(row.url) || row.title}
         </span>
       </div>
-      {row.error && row.google && (
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px' }}>
-          Blocks our scanner, so this uses Google&rsquo;s own SEO check
-          {row.google.checked && row.google.checked !== hostOf(row.url) ? ` (Google checked ${row.google.checked})` : ''}.
-        </div>
-      )}
       {row.error && !row.google && (
         <div style={{ fontSize: '12px', color: '#f0a0a6', marginTop: '3px' }}>{row.error}</div>
       )}
