@@ -44,7 +44,7 @@ export default function RankTracker({ url, keyword }) {
       }
     } catch (err) {
       setStatus('error')
-      setErrorMsg(err?.response?.data?.detail || 'Something went wrong. Try again.')
+      setErrorMsg(err?.message || 'Something went wrong. Try again.')
     }
   }
 
@@ -85,25 +85,26 @@ export default function RankTracker({ url, keyword }) {
         gap: '10px',
       }}>
         <div>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>
+          <h2 style={{ fontSize: '13px', fontWeight: 700, color: '#fff', display: 'inline', margin: 0 }}>
             Keyword Rank Tracker
-          </span>
+          </h2>
           <span style={{
             fontSize: '11px',
-            color: '#555',
+            color: '#8a8a8a',
             marginLeft: '10px',
           }}>
             Track "{keyword}" on Google
           </span>
         </div>
 
-        {status !== 'tracked' && (
+        {(
           <button
+            type="button"
             onClick={handleTrack}
             disabled={status === 'loading'}
             style={{
               background: status === 'loading' ? '#1e1e1e' : '#e63946',
-              color: status === 'loading' ? '#555' : '#fff',
+              color: status === 'loading' ? '#8a8a8a' : '#fff',
               border: 'none',
               borderRadius: '8px',
               padding: '8px 18px',
@@ -114,7 +115,7 @@ export default function RankTracker({ url, keyword }) {
               letterSpacing: '0.02em',
             }}
           >
-            {status === 'loading' ? 'Checking...' : 'Track this keyword'}
+            {status === 'loading' ? 'Checking...' : (status === 'tracked' || history.length > 0) ? 'Check again' : 'Track this keyword'}
           </button>
         )}
       </div>
@@ -139,8 +140,8 @@ export default function RankTracker({ url, keyword }) {
 
         {/* Idle prompt */}
         {status === 'idle' && (
-          <p style={{ fontSize: '13px', color: '#555', margin: 0 }}>
-            Click "Track this keyword" to start monitoring your SERP position daily.
+          <p style={{ fontSize: '13px', color: '#8a8a8a', margin: 0 }}>
+            We check your Google position when you click Track. Come back any time and click 'Check again' to add a new point to your history.
           </p>
         )}
 
@@ -161,8 +162,8 @@ export default function RankTracker({ url, keyword }) {
                 <span style={{ color: '#a0a0a0', wordBreak: 'break-all' }}>{url}</span>
               </span>
             </div>
-            <div style={{ fontSize: '11px', color: '#444', marginTop: '4px', marginLeft: '16px' }}>
-              Rank checks run daily
+            <div style={{ fontSize: '11px', color: '#8a8a8a', marginTop: '4px', marginLeft: '16px' }}>
+              We check your Google position when you click Track. Come back any time and click 'Check again' to add a new point to your history.
             </div>
           </div>
         )}
@@ -179,7 +180,7 @@ export default function RankTracker({ url, keyword }) {
                       style={{
                         padding: '8px 14px',
                         fontSize: '10px',
-                        color: '#555',
+                        color: '#8a8a8a',
                         fontWeight: 700,
                         letterSpacing: '0.08em',
                         textAlign: 'left',

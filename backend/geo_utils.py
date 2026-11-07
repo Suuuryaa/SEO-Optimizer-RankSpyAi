@@ -22,12 +22,20 @@ _HEADERS = {
 _REQUEST_TIMEOUT = 10
 
 
-def _get(url: str, **kwargs):
-    """Thin wrapper around requests.get with shared defaults."""
-    kwargs.setdefault("headers", _HEADERS)
-    kwargs.setdefault("timeout", _REQUEST_TIMEOUT)
-    kwargs.setdefault("allow_redirects", True)
-    return requests.get(url, **kwargs)
+_RAW_ROBOTS_MAX = 5000
+
+
+class _Empty:
+    """Stand-in response when a hop was private/unresolvable: no body."""
+    status_code = 0
+    text = ""
+
+
+def _get(url: str):
+    """GET with every redirect hop checked against private addresses (body capped at 500 KB)."""
+    from net_safety import safe_get
+    resp = safe_get(url, max_bytes=500_000, max_hops=5, timeout=_REQUEST_TIMEOUT, headers=_HEADERS)
+    return resp if resp is not None else _Empty()
 
 
 def _base_url(url: str) -> str:
@@ -40,84 +48,38 @@ def _base_url(url: str) -> str:
 # 1. check_ai_crawlers
 # ---------------------------------------------------------------------------
 
+GEO_VERSION = "1.1"
+
+# (name, user-agent token, category, deduction when blocked)
+# "search" bots fetch pages to show and cite them in AI answers: blocking them costs points.
+# "training" bots only collect model-training data: blocking them is the site's choice (0 points).
 _AI_CRAWLERS = [
-    # (display name, user-agent token, priority)
-    ("GPTBot",            "GPTBot",            "critical"),
-    ("ClaudeBot",         "ClaudeBot",          "critical"),
-    ("PerplexityBot",     "PerplexityBot",      "critical"),
-    ("OAI-SearchBot",     "OAI-SearchBot",      "critical"),
-    ("Googlebot",         "Googlebot",          "critical"),
-    ("Google-Extended",   "Google-Extended",    "secondary"),
-    ("Amazonbot",         "Amazonbot",          "secondary"),
-    ("Applebot-Extended", "Applebot-Extended",  "secondary"),
-    ("FacebookBot",       "FacebookBot",        "secondary"),
-    ("Bytespider",        "Bytespider",         "secondary"),
+    ("OAI-SearchBot",     "OAI-SearchBot",     "search",   15),
+    ("ChatGPT-User",      "ChatGPT-User",      "search",    5),
+    ("PerplexityBot",     "PerplexityBot",     "search",   15),
+    ("Perplexity-User",   "Perplexity-User",   "search",    5),
+    ("Claude-SearchBot",  "Claude-SearchBot",  "search",   15),
+    ("Claude-User",       "Claude-User",       "search",    5),
+    ("Googlebot",         "Googlebot",         "search",   15),
+    ("Bingbot",           "Bingbot",           "search",   15),
+    ("GPTBot",            "GPTBot",            "training",  0),
+    ("ClaudeBot",         "ClaudeBot",         "training",  0),
+    ("Google-Extended",   "Google-Extended",   "training",  0),
+    ("Applebot-Extended", "Applebot-Extended", "training",  0),
+    ("Bytespider",        "Bytespider",        "training",  0),
+    ("CCBot",             "CCBot",             "training",  0),
+    ("Amazonbot",         "Amazonbot",         "training",  0),
+    ("FacebookBot",       "FacebookBot",       "training",  0),
 ]
 
-_CRITICAL_DEDUCTION  = 15
-_SECONDARY_DEDUCTION = 5
 _SITEMAP_DEDUCTION   = 10
-
-
-def _parse_robots(robots_text: str) -> dict:
-    """
-    Parse robots.txt into a dict keyed by lower-cased user-agent.
-    Each value is a list of disallow paths.
-    Also returns a set of all encountered user-agents.
-    """
-    rules: dict[str, list[str]] = {}
-    current_agents: list[str] = []
-
-    for raw_line in robots_text.splitlines():
-        line = raw_line.split("#")[0].strip()
-        if not line:
-            if current_agents:
-                current_agents = []
-            continue
-
-        if ":" not in line:
-            continue
-
-        field, _, value = line.partition(":")
-        field  = field.strip().lower()
-        value  = value.strip()
-
-        if field == "user-agent":
-            current_agents.append(value.lower())
-            rules.setdefault(value.lower(), [])
-        elif field == "disallow" and value:
-            for agent in current_agents:
-                rules.setdefault(agent, []).append(value)
-
-    return rules
-
-
-def _is_blocked(agent_token: str, rules: dict) -> bool:
-    """
-    Return True if the given agent token is blocked (Disallow: /) in robots.txt.
-    Checks both the specific agent and the wildcard (*).
-    """
-    token_lower = agent_token.lower()
-
-    for key, disallows in rules.items():
-        if key == token_lower or key == "*":
-            if "/" in disallows or "/*" in disallows:
-                return True
-
-    return False
 
 
 def check_ai_crawlers(url: str) -> dict:
     """
-    Fetch robots.txt and check access for 10 AI crawlers.
+    Fetch robots.txt and check, with a standards-compliant parser (Protego),
+    whether each AI crawler may fetch THIS page's path.
     """
-    default = {
-        "score": 0,
-        "crawlers": [],
-        "has_sitemap": False,
-        "raw_robots": "",
-    }
-
     try:
         robots_url = urljoin(_base_url(url), "/robots.txt")
         resp = _get(robots_url)
@@ -125,31 +87,41 @@ def check_ai_crawlers(url: str) -> dict:
     except Exception:
         raw_robots = ""
 
-    rules = _parse_robots(raw_robots)
+    parser = None
+    if raw_robots.strip():
+        try:
+            from protego import Protego
+            parser = Protego.parse(raw_robots)
+        except Exception:
+            parser = None
 
-    # Sitemap presence
-    has_sitemap = bool(re.search(r"(?im)^sitemap\s*:", raw_robots))
+    has_sitemap = bool(re.search(r"(?im)^\s*sitemap\s*:", raw_robots))
 
     score = 100
     if not has_sitemap:
         score -= _SITEMAP_DEDUCTION
 
     crawlers = []
-    for name, agent, priority in _AI_CRAWLERS:
-        if not raw_robots:
+    for name, agent, category, deduction in _AI_CRAWLERS:
+        if parser is None:
             status = "not_specified"
-        elif _is_blocked(agent, rules):
-            status = "blocked"
-            deduction = _CRITICAL_DEDUCTION if priority == "critical" else _SECONDARY_DEDUCTION
-            score -= deduction
         else:
-            status = "allowed"
+            try:
+                allowed = parser.can_fetch(url, agent)
+            except Exception:
+                allowed = True
+            if allowed:
+                status = "allowed"
+            else:
+                status = "blocked"
+                score -= deduction
 
         crawlers.append({
             "name":       name,
             "user_agent": agent,
             "status":     status,
-            "priority":   priority,
+            "category":   category,
+            "priority":   "critical" if deduction >= 15 else "secondary",
         })
 
     score = max(0, min(100, score))
@@ -158,7 +130,52 @@ def check_ai_crawlers(url: str) -> dict:
         "score":      score,
         "crawlers":   crawlers,
         "has_sitemap": has_sitemap,
-        "raw_robots": raw_robots,
+        "raw_robots": raw_robots[:_RAW_ROBOTS_MAX],
+    }
+
+
+def check_snippet_controls(soup, x_robots_tag=None) -> dict:
+    """Snippet limits from meta robots/googlebot and the X-Robots-Tag header.
+
+    nosnippet or max-snippet:0 stops search engines (and their AI answers)
+    from quoting the page.
+    """
+    directives = []
+    for tag in soup.find_all("meta", attrs={"name": re.compile(r"^(robots|googlebot)$", re.I)}):
+        directives.append(tag.get("content") or "")
+    if x_robots_tag:
+        directives.append(str(x_robots_tag))
+
+    nosnippet = False
+    max_snippet = None
+    for d in directives:
+        for token in d.lower().split(","):
+            token = token.strip()
+            if ":" in token and not token.startswith("max-"):
+                token = token.split(":", 1)[1].strip()      # "googlebot: nosnippet"
+            if token == "nosnippet":
+                nosnippet = True
+            m = re.match(r"max-snippet\s*:\s*(-?\d+)", token)
+            if m:
+                val = int(m.group(1))
+                max_snippet = val if max_snippet is None else min(max_snippet, val)
+
+    data_nosnippet_count = len(soup.find_all(attrs={"data-nosnippet": True}))
+    recs = []
+    if nosnippet or max_snippet == 0:
+        recs.append({
+            "priority": "HIGH",
+            "issue": "Search engines are told not to quote this page (nosnippet / max-snippet:0)",
+            "fix": "Remove nosnippet or max-snippet:0 from the robots meta tag or X-Robots-Tag header",
+            "impact": "AI answers and search results can't show or cite text from this page",
+        })
+    return {
+        "snippet_controls": {
+            "nosnippet": nosnippet,
+            "max_snippet": max_snippet,
+            "data_nosnippet_count": data_nosnippet_count,
+        },
+        "recommendations": recs,
     }
 
 
@@ -612,13 +629,17 @@ def calculate_geo_score(
         schema_score  = 100 if has_schema    else 0
         llmstxt_score = 50  if llmstxt_exists else 0
 
-        weights = {
+        # llms.txt is shown for information only (no AI engine is known to use it):
+        # weight 0, the other weights scaled up proportionally to sum to 1.
+        base = {
             "citability": 0.30,
             "eeat":       0.25,
             "crawlers":   0.25,
             "schema":     0.10,
-            "llmstxt":    0.10,
         }
+        total_w = sum(base.values())
+        weights = {k: round(w / total_w, 4) for k, w in base.items()}
+        weights["llmstxt"] = 0.0
 
         scores = {
             "citability": float(citability_score),
@@ -643,14 +664,16 @@ def calculate_geo_score(
         composite = int(round(min(100, max(0, total))))
 
         return {
-            "score":     composite,
-            "band":      _band(composite),
-            "breakdown": breakdown,
+            "score":       composite,
+            "band":        _band(composite),
+            "breakdown":   breakdown,
+            "geo_version": GEO_VERSION,
         }
 
     except Exception:
         return {
-            "score":     0,
-            "band":      "Critical",
-            "breakdown": {},
+            "score":       0,
+            "band":        "Critical",
+            "breakdown":   {},
+            "geo_version": GEO_VERSION,
         }

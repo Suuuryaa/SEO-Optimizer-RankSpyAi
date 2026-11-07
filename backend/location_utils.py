@@ -100,23 +100,33 @@ CITY_MAPPINGS = {
 }
 
 
+# Google interface language per country (Serper "hl")
+COUNTRY_TO_HL = {
+    'NZ': 'en', 'AU': 'en', 'GB': 'en', 'US': 'en', 'CA': 'en', 'SG': 'en', 'IN': 'en',
+    'MY': 'en', 'PH': 'en', 'ZA': 'en',
+    'DE': 'de', 'FR': 'fr', 'JP': 'ja', 'CN': 'zh-cn', 'TH': 'th', 'VN': 'vi',
+    'ID': 'id', 'BR': 'pt-br', 'MX': 'es',
+}
+
+
 def detect_country_from_domain(url):
     """
-    Detect country from domain extension.
-    
-    Args:
-        url: Full URL string
-        
+    Detect country from the host's domain ending (not a substring of the whole
+    URL: "indeed.com" used to match ".in" and search India).
+
     Returns:
         Tuple of (country_code, country_name) or ('US', 'United States') as default
     """
-    url_lower = url.lower()
-    
-    # Check each domain pattern
-    for domain, (code, name) in DOMAIN_TO_COUNTRY.items():
-        if domain in url_lower:
+    try:
+        host = (urlparse(url if "//" in url else "https://" + url).hostname or "").lower()
+    except Exception:
+        host = ""
+
+    # Longest endings first so ".co.nz" wins over ".nz"
+    for domain, (code, name) in sorted(DOMAIN_TO_COUNTRY.items(), key=lambda kv: -len(kv[0])):
+        if host.endswith(domain):
             return code, name
-    
+
     # Default to US
     return 'US', 'United States'
 
@@ -187,6 +197,7 @@ def get_location_from_url(url):
         'city': city,
         'location_string': location_string,
         'serper_gl': country_code.lower(),
+        'serper_hl': COUNTRY_TO_HL.get(country_code),
         'serper_location': location_string
     }
 

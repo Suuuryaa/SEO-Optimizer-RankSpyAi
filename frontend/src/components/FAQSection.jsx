@@ -1,13 +1,13 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 const FAQS = [
   {
     q: 'What does RankSpy AI analyze?',
-    a: 'RankSpy AI crawls your URL like a search engine and checks 200+ SEO factors including meta tags, content quality, page speed, link structure, technical configuration, and AI/GEO signals.',
+    a: 'RankSpy AI crawls your URL like a search engine and runs 30+ on-page checks covering meta tags, content quality, link structure, technical setup, and (optionally) AI/GEO signals.',
   },
   {
-    q: 'Is it really free?',
-    a: 'Yes — the core SEO analysis and competitor finder are completely free with no sign-up required. You get real results instantly.',
+    q: 'Is it free?',
+    a: 'Yes. Everyone shares 100 free scans a day. Add your own free Gemini and Serper keys for up to 100 scans a day of your own.',
   },
   {
     q: 'What is the SEO score?',
@@ -33,6 +33,7 @@ const FAQS = [
 
 function FAQItem({ q, a }) {
   const [open, setOpen] = useState(false)
+  const id = useId()
 
   return (
     <div
@@ -40,7 +41,12 @@ function FAQItem({ q, a }) {
         borderBottom: '1px solid #1a1a1a',
       }}
     >
+      <h3 style={{ margin: 0 }}>
       <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`${id}-a`}
+        id={`${id}-q`}
         onClick={() => setOpen((o) => !o)}
         style={{
           width: '100%',
@@ -55,8 +61,9 @@ function FAQItem({ q, a }) {
           textAlign: 'left',
         }}
       >
-        <span style={{ fontSize: '14px', fontWeight: 600, color: '#e0e0e0', lineHeight: '1.4' }}>{q}</span>
+        <span style={{ fontSize: '14px', fontWeight: 600, color: '#e0e0e0', lineHeight: '1.4', fontFamily: 'inherit' }}>{q}</span>
         <span
+          aria-hidden="true"
           style={{
             flexShrink: 0,
             width: '24px',
@@ -68,7 +75,7 @@ function FAQItem({ q, a }) {
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: '16px',
-            color: open ? '#e63946' : '#606060',
+            color: open ? '#ff6b75' : '#a0a0a0',
             transition: 'all 0.2s',
             lineHeight: 1,
           }}
@@ -76,13 +83,17 @@ function FAQItem({ q, a }) {
           {open ? '−' : '+'}
         </span>
       </button>
+      </h3>
 
       {open && (
         <div
+          id={`${id}-a`}
+          role="region"
+          aria-labelledby={`${id}-q`}
           style={{
             paddingBottom: '20px',
             fontSize: '13px',
-            color: '#808080',
+            color: '#a0a0a0',
             lineHeight: '1.7',
           }}
         >
@@ -95,7 +106,7 @@ function FAQItem({ q, a }) {
 
 export default function FAQSection() {
   return (
-    <div style={{ padding: '80px 24px' }}>
+    <div style={{ padding: '64px 0' }}>
       <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '48px' }}>
           <h2
@@ -115,7 +126,7 @@ export default function FAQSection() {
             background: '#111',
             border: '1px solid #1f1f1f',
             borderRadius: '14px',
-            padding: '0 28px',
+            padding: '0 20px',
           }}
         >
           {FAQS.map((item) => (

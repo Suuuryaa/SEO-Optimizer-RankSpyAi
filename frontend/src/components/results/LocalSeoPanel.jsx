@@ -48,7 +48,7 @@ export default function LocalSeoPanel({ data }) {
       <div style={{ background: '#161616', padding: '14px 20px', borderBottom: '1px solid #1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>Local SEO</span>
-          <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>NAP, schema & geo signals</span>
+          <span style={{ fontSize: '11px', color: '#8a8a8a', marginLeft: '8px' }}>NAP, schema & geo signals</span>
         </div>
         {/* Score badge */}
         <div style={{
@@ -61,7 +61,7 @@ export default function LocalSeoPanel({ data }) {
           gap: '6px',
         }}>
           <span style={{ fontSize: '22px', fontWeight: 900, color, lineHeight: 1 }}>{local_score}</span>
-          <span style={{ fontSize: '10px', color: '#555', fontWeight: 700 }}>/100</span>
+          <span style={{ fontSize: '10px', color: '#8a8a8a', fontWeight: 700 }}>/100</span>
         </div>
       </div>
 
@@ -78,7 +78,7 @@ export default function LocalSeoPanel({ data }) {
               textAlign: 'center',
               minWidth: '80px',
             }}>
-              <div style={{ fontSize: '10px', color: '#555', letterSpacing: '0.06em', marginBottom: '3px', fontWeight: 600 }}>{chip.label}</div>
+              <div style={{ fontSize: '10px', color: '#8a8a8a', letterSpacing: '0.06em', marginBottom: '3px', fontWeight: 600 }}>{chip.label}</div>
               <div style={{ fontSize: '16px', fontWeight: 900, color: chip.pass ? '#22c55e' : '#e63946' }}>{chip.val}</div>
             </div>
           ))}
@@ -91,7 +91,7 @@ export default function LocalSeoPanel({ data }) {
             textAlign: 'center',
             minWidth: '80px',
           }}>
-            <div style={{ fontSize: '10px', color: '#555', letterSpacing: '0.06em', marginBottom: '3px', fontWeight: 600 }}>Maps</div>
+            <div style={{ fontSize: '10px', color: '#8a8a8a', letterSpacing: '0.06em', marginBottom: '3px', fontWeight: 600 }}>Maps</div>
             <div style={{ fontSize: '16px', fontWeight: 900, color: google_maps_embed ? '#22c55e' : '#e63946' }}>{google_maps_embed ? '✓' : '✗'}</div>
           </div>
           {/* City mention chip */}
@@ -103,7 +103,7 @@ export default function LocalSeoPanel({ data }) {
             textAlign: 'center',
             minWidth: '80px',
           }}>
-            <div style={{ fontSize: '10px', color: '#555', letterSpacing: '0.06em', marginBottom: '3px', fontWeight: 600 }}>City Mention</div>
+            <div style={{ fontSize: '10px', color: '#8a8a8a', letterSpacing: '0.06em', marginBottom: '3px', fontWeight: 600 }}>City Mention</div>
             <div style={{ fontSize: '16px', fontWeight: 900, color: geo_signals.city_mentions?.length > 0 ? '#22c55e' : '#e63946' }}>
               {geo_signals.city_mentions?.length > 0 ? '✓' : '✗'}
             </div>
@@ -113,22 +113,23 @@ export default function LocalSeoPanel({ data }) {
         {/* Local Checks list */}
         {local_checks.length > 0 && (
           <div>
-            <div style={{ fontSize: '11px', color: '#555', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '8px' }}>LOCAL CHECKS</div>
+            <div style={{ fontSize: '11px', color: '#8a8a8a', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '8px' }}>LOCAL CHECKS</div>
             <div style={{ background: '#0e0e0e', border: '1px solid #1a1a1a', borderRadius: '8px', overflow: 'hidden' }}>
               {local_checks.map((check, i) => {
-                const dotColor = check.pass ? '#22c55e' : '#e63946'
-                const statusLabel = check.pass ? 'OK' : 'Error'
+                const optional = /nice|optional|low/i.test(String(check.importance || ''))
+                const dotColor = check.pass ? '#22c55e' : optional ? '#8a8a8a' : '#ff6b75'
+                const statusLabel = check.pass ? 'OK' : optional ? 'Optional' : 'Missing'
                 return (
                   <div key={i} style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr auto auto',
-                    gap: '16px',
+                    gridTemplateColumns: 'minmax(0,1fr) auto auto',
+                    gap: '8px 12px',
                     alignItems: 'center',
                     padding: '11px 16px',
                     borderBottom: i < local_checks.length - 1 ? '1px solid #181818' : 'none',
                   }}>
                     <span style={{ fontSize: '13px', color: '#c8c8c8' }}>{check.label}</span>
-                    <span style={{ fontSize: '10px', color: '#444', fontWeight: 600, whiteSpace: 'nowrap' }}>{check.importance}</span>
+                    <span style={{ fontSize: '10px', color: '#8a8a8a', fontWeight: 600, whiteSpace: 'nowrap' }}>{check.importance}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: '56px', justifyContent: 'flex-end' }}>
                       <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
                       <span style={{ fontSize: '11px', color: dotColor, fontWeight: 700, letterSpacing: '0.03em' }}>{statusLabel}</span>
@@ -143,7 +144,7 @@ export default function LocalSeoPanel({ data }) {
         {/* Quick fixes */}
         {quick_fixes.length > 0 && (
           <div>
-            <div style={{ fontSize: '11px', color: '#555', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '8px' }}>QUICK FIXES</div>
+            <div style={{ fontSize: '11px', color: '#8a8a8a', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '8px' }}>QUICK FIXES</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {quick_fixes.map((fix, i) => (
                 <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
@@ -165,9 +166,9 @@ export default function LocalSeoPanel({ data }) {
           gap: '8px',
           alignItems: 'flex-start',
         }}>
-          <span style={{ fontSize: '12px', color: '#444', flexShrink: 0, lineHeight: 1.5 }}>ℹ</span>
-          <span style={{ fontSize: '12px', color: '#444', lineHeight: 1.6 }}>
-            <strong style={{ color: '#555' }}>NOT A LOCAL BUSINESS?</strong> Skip this section if your site does not serve a specific local area.
+          <span style={{ fontSize: '12px', color: '#8a8a8a', flexShrink: 0, lineHeight: 1.5 }}>ℹ</span>
+          <span style={{ fontSize: '12px', color: '#8a8a8a', lineHeight: 1.6 }}>
+            <strong style={{ color: '#8a8a8a' }}>NOT A LOCAL BUSINESS?</strong> Skip this section if your site does not serve a specific local area.
           </span>
         </div>
 

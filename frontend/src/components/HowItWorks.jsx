@@ -1,8 +1,4 @@
-import { useEffect, useRef } from 'react'
-import { gsap } from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
-
-gsap.registerPlugin(ScrollTrigger)
+import { useReveal } from '../lib/useReveal'
 
 const STEPS = [
   {
@@ -13,7 +9,7 @@ const STEPS = [
   {
     number: '02',
     title: 'We Crawl & Analyze',
-    desc: 'RankSpy AI fetches your page like a search engine bot and runs 200+ checks instantly.',
+    desc: 'RankSpy AI fetches your page like a search engine bot and runs 30+ on-page checks, usually in about a minute.',
   },
   {
     number: '03',
@@ -23,43 +19,12 @@ const STEPS = [
 ]
 
 export default function HowItWorks() {
-  const sectionRef = useRef(null)
-  const headingRef = useRef(null)
-  const stepsRef = useRef([])
-  const lineRef = useRef(null)
-
-  useEffect(() => {
-    const heading = headingRef.current
-    const steps = stepsRef.current.filter(Boolean)
-    const line = lineRef.current
-
-    gsap.set(heading, { opacity: 0, y: 30 })
-    steps.forEach((s) => gsap.set(s, { opacity: 0, y: 40 }))
-    gsap.set(line, { scaleX: 0, transformOrigin: 'left center' })
-
-    ScrollTrigger.create({
-      trigger: sectionRef.current,
-      start: 'top 75%',
-      onEnter: () => {
-        gsap.to(heading, { opacity: 1, y: 0, duration: 0.8, ease: 'power3.out' })
-        gsap.to(line, { scaleX: 1, duration: 1.2, ease: 'power2.inOut', delay: 0.3 })
-        steps.forEach((s, i) =>
-          gsap.to(s, { opacity: 1, y: 0, duration: 0.7, ease: 'power3.out', delay: 0.2 + i * 0.15 })
-        )
-      },
-    })
-
-    const t = setTimeout(() => ScrollTrigger.refresh(), 300)
-    return () => {
-      clearTimeout(t)
-      ScrollTrigger.getAll().forEach((st) => st.kill())
-    }
-  }, [])
+  const sectionRef = useReveal()
 
   return (
-    <div ref={sectionRef} style={{ padding: '100px 24px' }}>
+    <div ref={sectionRef} style={{ padding: '80px 0' }}>
       <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-        <div ref={headingRef} style={{ textAlign: 'center', marginBottom: '72px' }}>
+        <div className="reveal" style={{ textAlign: 'center', marginBottom: '56px' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, color: '#e63946', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '16px' }}>
             The process
           </div>
@@ -70,19 +35,16 @@ export default function HowItWorks() {
 
         <div style={{ position: 'relative' }}>
           {/* Animated connector line */}
-          <div style={{ position: 'absolute', top: '28px', left: '16.6%', right: '16.6%', height: '1px', overflow: 'hidden' }}>
-            <div
-              ref={lineRef}
-              style={{ height: '100%', background: 'linear-gradient(90deg, #e63946, rgba(230,57,70,0.3))' }}
-            />
+          <div className="how-line" style={{ position: 'absolute', top: '28px', left: '16.6%', right: '16.6%', height: '1px', overflow: 'hidden' }}>
+            <div style={{ height: '100%', background: 'linear-gradient(90deg, #e63946, rgba(230,57,70,0.3))' }} />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
+          <div className="how-steps" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
             {STEPS.map((step, i) => (
               <div
                 key={step.number}
-                ref={(el) => (stepsRef.current[i] = el)}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '0 24px' }}
+                className="reveal"
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '0 16px', transitionDelay: `${0.1 + i * 0.15}s` }}
               >
                 <div
                   style={{
@@ -104,10 +66,10 @@ export default function HowItWorks() {
                     {step.number}
                   </span>
                 </div>
-                <div style={{ fontSize: '15px', fontWeight: 700, color: '#fff', marginBottom: '12px', letterSpacing: '-0.3px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#fff', margin: '0 0 12px', letterSpacing: '-0.3px' }}>
                   {step.title}
-                </div>
-                <div style={{ fontSize: '13px', color: '#505050', lineHeight: '1.65', maxWidth: '220px' }}>
+                </h3>
+                <div style={{ fontSize: '13px', color: '#a0a0a0', lineHeight: '1.65', maxWidth: '220px' }}>
                   {step.desc}
                 </div>
               </div>

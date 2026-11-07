@@ -27,26 +27,35 @@ def _detect_page_type(
 ) -> str:
     url_lower  = url.lower()
     text_lower = text.lower()
+    heading    = " ".join([title or ""] + list(h1_tags or [])).lower()
 
-    # FAQ
-    faq_patterns = [r'\bfaq\b', r'frequently asked', r'question.*answer']
-    if any(re.search(p, url_lower + text_lower) for p in faq_patterns):
+    def hits(patterns, haystack):
+        return sum(1 for p in patterns if re.search(p, haystack))
+
+    # FAQ — the page itself must be an FAQ (URL/title/H1) or contain real Q&A pairs.
+    # A nav link labelled "FAQ" on a homepage is not enough.
+    if (re.search(r'faq|frequently-asked', url_lower)
+            or re.search(r'\bfaqs?\b|frequently asked', heading)
+            or len(_extract_faq_pairs(text)) >= 3):
         return "FAQPage"
 
-    # Product
-    product_patterns = [r'\$[\d,]+', r'add to cart', r'buy now', r'in stock', r'out of stock', r'/product', r'/shop']
-    if any(re.search(p, url_lower + text_lower) for p in product_patterns):
+    # Product — product URL, or at least two commerce signals
+    if re.search(r'/products?/|/shop/|/item/|/p/', url_lower):
+        return "Product"
+    if hits([r'add to (cart|bag|basket)', r'buy now', r'in stock', r'out of stock',
+             r'[$€£₹]\s?\d[\d,]*(\.\d{2})?'], text_lower) >= 2:
         return "Product"
 
-    # Local business
-    local_patterns = [r'hours?:', r'open.*am', r'address:', r'phone:', r'\(\d{3}\)', r'directions']
-    if any(re.search(p, text_lower) for p in local_patterns):
-        return "LocalBusiness"
-
-    # Article / blog
-    article_patterns = [r'/blog/', r'/article', r'/post/', r'/news/', r'published', r'author:']
-    if any(re.search(p, url_lower + text_lower) for p in article_patterns):
+    # Article — article-style URL, or byline + publish date together
+    if re.search(r'/(blog|article|articles|post|posts|news)/', url_lower):
         return "Article"
+    if hits([r'\bby [a-z]+ [a-z]+', r'published( on)?\s', r'author:'], text_lower) >= 2:
+        return "Article"
+
+    # Local business — at least two of hours / address / phone / directions
+    if hits([r'opening hours|hours:', r'address:', r'phone:|tel:', r'\(\d{3}\)\s?\d{3}',
+             r'get directions'], text_lower) >= 2:
+        return "LocalBusiness"
 
     return "WebPage"
 

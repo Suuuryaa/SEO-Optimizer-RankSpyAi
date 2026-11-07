@@ -1,6 +1,14 @@
 export default {
   async fetch(request, env) {
-    const response = await env.ASSETS.fetch(request);
+    let response = await env.ASSETS.fetch(request);
+
+    // The SPA fallback answers every unknown path with index.html and a 200.
+    // For paths that name a file (have an extension) that is a soft 404, so say 404.
+    const { pathname } = new URL(request.url);
+    const isFilePath = /\.[a-z0-9]{1,8}$/i.test(pathname) && !pathname.endsWith('.html');
+    if (isFilePath && (response.headers.get('content-type') || '').includes('text/html')) {
+      response = new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    }
     const newHeaders = new Headers(response.headers);
 
     newHeaders.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
