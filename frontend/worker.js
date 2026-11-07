@@ -1,5 +1,13 @@
 export default {
   async fetch(request, env) {
+    // One address only: https://rankspyseo.xyz (plain http and www redirect here)
+    const url = new URL(request.url);
+    if (url.protocol === 'http:' || url.hostname.startsWith('www.')) {
+      url.protocol = 'https:';
+      url.hostname = url.hostname.replace(/^www\./, '');
+      return Response.redirect(url.toString(), 301);
+    }
+
     let response = await env.ASSETS.fetch(request);
 
     // The SPA fallback answers every unknown path with index.html and a 200.

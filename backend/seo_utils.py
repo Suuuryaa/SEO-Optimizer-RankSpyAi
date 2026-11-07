@@ -585,7 +585,7 @@ def get_meta_description(soup):
 
 def get_h1_tags(soup):
     """Extract all H1 tags."""
-    return [tag.get_text(strip=True) for tag in soup.find_all("h1")]
+    return [" ".join(tag.get_text(" ", strip=True).split()) for tag in soup.find_all("h1")]
 
 
 _INVISIBLE_PARENTS = frozenset({"script", "style", "noscript", "template", "head"})

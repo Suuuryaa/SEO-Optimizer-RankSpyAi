@@ -1060,6 +1060,7 @@ async def suggest_meta(req: SuggestMetaRequest, request: Request):
             text,
             req.keyword,
             req.url,
+            active_keys(req.user_api_keys.model_dump() if getattr(req, "user_api_keys", None) else None)["gemini"] or "",
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Meta suggestion generation failed.")

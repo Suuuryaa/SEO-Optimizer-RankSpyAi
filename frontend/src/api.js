@@ -36,7 +36,7 @@ export function resetTimeLocal(iso) {
     const n = new Date()
     return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1))
   })()
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
 export const AI_REPORT_UNAVAILABLE =

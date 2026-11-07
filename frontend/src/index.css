@@ -254,11 +254,12 @@ img, svg, video { max-width: 100%; }
 }
 
 /* Zig-zag feature rows */
-.feature-row { display: grid; grid-template-columns: 1fr 1.1fr; gap: 56px; align-items: center; }
+.feature-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 56px; align-items: center; }
+.feature-copy, .feature-visual { min-width: 0; }
 .feature-row.flip .feature-copy { order: 2; }
 .feature-row.flip .feature-visual { order: 1; }
 @media (max-width: 860px) {
-  .feature-row, .feature-row.flip { grid-template-columns: 1fr; gap: 28px; }
+  .feature-row, .feature-row.flip { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .feature-row.flip .feature-copy, .feature-row.flip .feature-visual { order: 0; }
   .feature-rows { gap: 64px !important; }
 }
