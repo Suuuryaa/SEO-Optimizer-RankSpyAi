@@ -74,7 +74,7 @@ export const FAQ_GROUPS = [
     items: [
       {
         q: 'How are my competitors chosen?',
-        a: 'AI names your business\'s main rivals in your home market (Flipkart is compared with Amazon, Myntra, Snapdeal and others). We keep only sites that are online, then check each one\'s real Google position for your keyword and compare their pages with yours.',
+        a: 'AI names your business\'s main rivals in your home market (Woolworths is compared with New World, PAK\'nSAVE and Kmart in New Zealand; Tesco with Sainsbury\'s and Asda in the UK). We keep only sites that are online, then check each one\'s real Google position for your keyword and compare their pages with yours.',
       },
       {
         q: 'Why does a competitor show "Google check" instead of a score?',
