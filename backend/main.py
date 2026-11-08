@@ -60,6 +60,7 @@ def _quota_gate(request: Request, bucket: str, limit: int) -> None:
 from rate_limiter import check_and_consume, get_global_uses, get_remaining, refund
 import free_limits
 import spend
+import search_log
 from net_safety import visitor_bucket
 from models import (
     AnalyzeRequest, AnalyzeResponse,
@@ -686,6 +687,51 @@ def admin_reset_pool(x_admin_key: Optional[str] = Header(None)):
     return {"reset": True, "pool_uses": 0, "pool_limit": GLOBAL_LIMIT}
 
 
+# ── Private search log (site owner only) ──────────────────────────────────────
+
+def _admin_ok(key: Optional[str]) -> bool:
+    import hmac
+    return bool(ADMIN_SECRET and key and hmac.compare_digest(key.encode(), ADMIN_SECRET.encode()))
+
+
+def _log_search(req: AnalyzeRequest, request: Request, *, cached: bool, js: bool) -> None:
+    """Queue one line in today's search log without slowing the scan."""
+    try:
+        row = search_log.build_row(req.url, req.keyword, request.headers, cached=cached,
+                                   fresh=req.fresh, geo=req.geo, pagespeed=req.pagespeed, js=js)
+        _executor.submit(search_log.record, row)
+    except Exception as exc:
+        logger.warning(f"search log skipped: {exc}")
+
+
+@app.get("/admin/search-log/days")
+def admin_search_log_days(key: Optional[str] = None, x_admin_key: Optional[str] = Header(None)):
+    """Which NZ days still have a search log (kept 3 days after the day ends)."""
+    if not _admin_ok(key or x_admin_key):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return {"days": search_log.available_days()}
+
+
+@app.get("/admin/search-log")
+def admin_search_log(date: Optional[str] = None, key: Optional[str] = None,
+                     x_admin_key: Optional[str] = Header(None)):
+    """Download one NZ day's searches as an Excel file. date=YYYY-MM-DD, default today."""
+    if not _admin_ok(key or x_admin_key):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    import re
+    from fastapi.responses import Response
+    day = date or search_log.today_nz()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    rows = search_log.get_day(day)
+    return Response(
+        content=search_log.to_xlsx(rows, day),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="searches-{day}.xlsx"',
+                 "Cache-Control": "no-store"},
+    )
+
+
 @app.get("/rate-status")
 def rate_status(request: Request):
     """This visitor's free allowance for today (plus legacy keys for older frontends)."""
@@ -712,6 +758,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
     if cacheable:
         cached = await _run(get_cached, req.url, req.keyword)
         if cached:
+            _log_search(req, request, cached=True, js=js_mode)
             logger.info(f"/analyze cache HIT: {req.url}")
             cached.pop("image_text", None)
             await _run(free_limits.mark_seen, bucket, req.url, req.keyword)
@@ -719,6 +766,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
             cached.update(await _run(_allowance_fields, bucket, req.url, req.keyword))
             return cached
 
+    _log_search(req, request, cached=False, js=js_mode)
     gate = await _run(_gate, req.user_api_keys, request, "scan", req.url, req.keyword, req.fresh)
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
