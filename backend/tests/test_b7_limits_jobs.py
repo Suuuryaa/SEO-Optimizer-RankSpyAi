@@ -152,7 +152,7 @@ def test_job_timeout_sets_error_kind(monkeypatch):
         return main._JOBS[out["job_id"]]
 
     job = asyncio.run(scenario())
-    assert job["status"] == "error" and job["error_kind"] == "timeout"
+    assert job["status"] == "error" and job["error_kind"] == "scan_timeout"
 
 
 def test_ip_quota_redis_failure_enforced_in_process(monkeypatch):

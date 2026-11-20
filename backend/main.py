@@ -579,6 +579,7 @@ import uuid
 _JOBS: dict[str, dict] = {}
 _JOB_TTL = 10 * 60
 _JOB_TIMEOUT = 200            # seconds a scan may run before it is stopped
+_COMP_TIMEOUT = 40            # seconds per competitor page before we fall back to Google's data
 _JOBS_PER_IP = 2              # queued + running per visitor
 _JOBS_UNFINISHED_MAX = 30     # queued + running in total
 _JOBS_STORED_MAX = 100        # kept in memory, finished ones included
@@ -617,8 +618,9 @@ async def _run_job(job: dict, make_coro) -> None:
             job["result"] = result.model_dump() if hasattr(result, "model_dump") else result
             job["status"] = "done"
         except asyncio.TimeoutError:
-            job.update(status="error", error="The scan took too long and was stopped. Please try again.",
-                       status_code=504, error_kind="timeout")
+            await _run(_refund, job.get("gate"))      # our fault: give the free scan back
+            job.update(status="error", error="The scan took too long and was stopped. Your free scan was given back.",
+                       status_code=504, error_kind="scan_timeout")
         except FetchError as exc:
             job.update(status="error", error=str(exc), status_code=422, error_kind=exc.kind)
         except HTTPException as exc:
@@ -626,6 +628,7 @@ async def _run_job(job: dict, make_coro) -> None:
             job.update(status="error", error=str(exc.detail), status_code=exc.status_code, error_kind=kind)
         except Exception as exc:
             logger.error(f"job {job['id']} failed: {exc}", exc_info=True)
+            await _run(_refund, job.get("gate"))      # server error: give the free scan back
             job.update(status="error", error="Scan failed. Please try again.", status_code=500,
                        error_kind="internal")
         finally:
@@ -768,6 +771,8 @@ async def analyze(req: AnalyzeRequest, request: Request):
 
     _log_search(req, request, cached=False, js=js_mode)
     gate = await _run(_gate, req.user_api_keys, request, "scan", req.url, req.keyword, req.fresh)
+    if (_job := _current_job.get()) is not None:
+        _job["gate"] = gate
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     # ── Run analysis pipeline ─────────────────────────────────────────────────
@@ -887,6 +892,8 @@ def _domain_of(url: str) -> str:
 
 async def competitors(req: CompetitorsRequest, request: Request):
     gate = await _run(_gate, req.user_api_keys, request, "compare")
+    if (_job := _current_job.get()) is not None:
+        _job["gate"] = gate
     keys = active_keys(req.user_api_keys.model_dump() if req.user_api_keys else None)
 
     if not keys["serper"]:
@@ -949,7 +956,14 @@ async def competitors(req: CompetitorsRequest, request: Request):
         if not comp_url:
             return None
         try:
-            row = await _run(analyze_venue, comp_url, req.keyword, True)
+            # No hidden browser for rivals, and a hard time cap: one slow or blocking
+            # site must not hold up the comparison (it falls back to Google's data below)
+            row = await asyncio.wait_for(_run(analyze_venue, comp_url, req.keyword, True, False),
+                                         timeout=_COMP_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning(f"comp timeout {comp_url} (>{_COMP_TIMEOUT}s)")
+            row = {"Venue Name": comp_url, "URL": comp_url, "SEO Score": 0, "Score Band": "Blocked",
+                   "error": "Couldn't scan this site, it took too long to respond.", "error_kind": "timeout"}
         except Exception as exc:
             logger.warning(f"comp error {comp_url}: {exc}")   # logged, never sent to the client
             message, kind = row_error(exc)

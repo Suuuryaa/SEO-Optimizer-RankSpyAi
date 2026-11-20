@@ -148,18 +148,18 @@ def _fetch_with_fetcher(url):
 
 
 def _fetch_with_stealthy(url):
-    """Tier 5: Playwright + Patchright headless browser — handles JS SPAs + Cloudflare Turnstile."""
+    """Tier 5: Playwright + Patchright headless browser for JavaScript-built pages."""
     if not _is_public_url(url):
         raise FetchError("blocked", "That address points to a private network and can't be scanned.")
     resp = _StealthyFetcher.fetch(
         url,
         headless=True,
         network_idle=True,       # Wait until JS finishes loading content
-        timeout=45000,           # 45s — JS sites are slow
-        solve_cloudflare=True,   # Auto-solve Cloudflare Turnstile challenges
+        timeout=20000,           # 20s, one attempt: a slow site must not hold the only browser
+        retries=1,
         disable_resources=True,  # Skip images/fonts/css for speed
         block_ads=True,
-        google_search=True,      # Set Google referer (looks more natural)
+        # No robot-challenge solving: if a site blocks automated visitors, we respect it
     )
     final_url = str(getattr(resp, "url", "") or url)
     if not _is_public_url(final_url):
@@ -225,7 +225,7 @@ def _read_capped(resp) -> bytes:
     return raw
 
 
-def _fetch_page(url):
+def _fetch_page(url, allow_browser=True):
     """
     5-tier fetch strategy. Returns (soup, html, meta) where meta is
     {final_url, http_status, x_robots_tag, content_type}.
@@ -353,9 +353,10 @@ def _fetch_page(url):
                 logger.info(f"Paid tier {name} failed for {url}: {e} — no further paid attempts")
             break
 
-    # ── Tier 5: StealthyFetcher (Playwright headless + Cloudflare solver) ───
+    # ── Tier 5: StealthyFetcher (Playwright headless, for JavaScript pages) ───
     # Shares the single browser slot with the JS renderer and deep crawl; skipped when busy.
-    if _STEALTHY_AVAILABLE and time.time() - _t0 < 20:
+    # Competitor pages skip this tier: if a rival blocks us we use Google's data instead
+    if allow_browser and _STEALTHY_AVAILABLE and time.time() - _t0 < 20:
         if _BROWSER_SLOT.acquire(blocking=False):
             try:
                 logger.info(f"Tier5 StealthyFetcher fetching {url}")
@@ -426,12 +427,12 @@ def _cache_put(key, html, meta=None):
             _cache_drop(next(iter(_PAGE_CACHE)))
 
 
-def get_page_soup(url):
+def get_page_soup(url, allow_browser=True):
     """Cached wrapper: returns a fresh soup from cached HTML, fetching on a miss."""
     hit = _cache_get(url)
     if hit:
         return BeautifulSoup(hit[1], "lxml"), hit[1]
-    soup, html, meta = _fetch_page(url)
+    soup, html, meta = _fetch_page(url, allow_browser)
     _cache_put(url, html, meta)
     return soup, html
 

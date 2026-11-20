@@ -11,6 +11,7 @@ const MESSAGES = {
   server_error: 'That site returned a server error. Try again later.',
   blocked: 'This site blocked our scanner.',
   timeout: 'That site is slow to respond. Try again in a minute.',
+  scan_timeout: 'The scan took too long, usually because a competitor\'s site didn\'t respond. Your free scan was given back, so you can try again.',
   unreachable: "We couldn't find that domain.",
   not_html: "That URL isn't a web page.",
   rate_limited: "Today's free scans are used up.",

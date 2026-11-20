@@ -108,7 +108,7 @@ def test_competitors_ai_failure_and_rows(public_dns, monkeypatch):
         "_soup": None, "_text": "", "_x_robots_tag": None})
     monkeypatch.setattr(main, "progressive_competitor_search",
                         lambda *a, **k: ([], [{"Link": "https://rival.com/"}], ["log"], "msg"))
-    monkeypatch.setattr(main, "analyze_venue", lambda u, k, t=False: {"Venue Name": "Rival", "URL": u, "SEO Score": 60})
+    monkeypatch.setattr(main, "analyze_venue", lambda u, k, t=False, b=True: {"Venue Name": "Rival", "URL": u, "SEO Score": 60})
     monkeypatch.setattr(main, "generate_content_brief", lambda *a: {})
     monkeypatch.setattr(main, "_google_positions", lambda *a: None)
 
